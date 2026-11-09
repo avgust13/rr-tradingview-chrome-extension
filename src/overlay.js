@@ -1,5 +1,5 @@
 // HTML controls on top of the chart pane, inside the chart iframe. Kept off the candles:
-//  - pill: [−10] [qty] [+10], glued to the left of the Entry label (labels sit at the price scale);
+//  - pill: narrow stack of [+10] / [qty] / [−10], glued to the Entry label (labels sit at the price scale);
 //  - dock: bottom-left corner, the R/R toggle plus LONG/SHORT, LIVE/FIX, → Form, ⚙, ✕.
 (function () {
   'use strict';
@@ -9,6 +9,8 @@
   const DOCK_BOTTOM = 8;
   const PILL_GAP = 6;       // px between the pill and the Entry label
   const PILL_MIN_LEFT = 8;
+  const PILL_W = 44;        // fallbacks while the pill is still hidden (matches styles.js)
+  const PILL_H = 56;
   const EDGE_PAD = 14;      // keep the pill this far inside the pane
   // State classes are prefixed: TradingView has global rules like .show{display:block!important}.
   const VIS = 'rr-visible';
@@ -83,7 +85,7 @@
       this.qty.inputMode = 'numeric';
       this.qty.title = 'Количество акций (колесо мыши, ↑/↓ — ±1)';
       this.btnPlus = el(doc, 'button', 'rr-plus', '', 'Увеличить Qty (Shift — на 1)');
-      pill.append(this.btnMinus, this.qty, this.btnPlus);
+      pill.append(this.btnPlus, this.qty, this.btnMinus); // stacked: more on top, less below
       isolate(pill);
 
       this.toggle.addEventListener('click', () => h.onToggle());
@@ -219,14 +221,18 @@
       this.pop.style.top = dr.top - this.pop.offsetHeight - 6 + 'px';
     }
 
+    pillWidth() {
+      return this.pill.offsetWidth || PILL_W;
+    }
+
     // y: Entry price in pane px. label: the Entry label box; obstacles: all label boxes
     // (pane px). freeX: pane x where the empty space right of the last candle begins.
     // Tries beside the label on the line, then stacked above/below it; prefers spots in
     // the empty space so the pill doesn't sit on candles.
     placePill(rect, y, label, obstacles, freeX) {
       if (!rect || y == null || !Number.isFinite(y)) return;
-      const pw = this.pill.offsetWidth || 130;
-      const ph = this.pill.offsetHeight || 22;
+      const pw = this.pillWidth();
+      const ph = this.pill.offsetHeight || PILL_H;
       const clamped = Math.min(Math.max(y, EDGE_PAD), rect.height - EDGE_PAD);
       this.pill.classList.toggle('rr-edge', clamped !== y);
 

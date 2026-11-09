@@ -38,19 +38,22 @@
 .utexrr-dock .rr-loss { color: #f23645; }
 .utexrr-dock .rr-gain { color: #089981; }
 
-/* Pill: glued to the left of the Entry line label */
+/* Pill: narrow vertical stack (+step / qty / −step) glued to the Entry line label */
 .utexrr-pill {
-  display: none; align-items: center; gap: 2px; height: 22px; padding: 0 2px;
+  display: none; flex-direction: column; align-items: stretch; gap: 1px; width: 44px; padding: 2px;
   background: rgba(30,34,45,.85); border: 1px solid #2962ff; border-radius: 4px;
   transform: translateY(-50%);
 }
 .utexrr-pill.rr-visible { display: flex; }
 .utexrr-pill.rr-edge { border-style: dashed; }
-.utexrr-pill button { height: 18px; padding: 0 5px; background: transparent; }
+.utexrr-pill button {
+  height: 15px; min-width: 0; padding: 0; border-radius: 2px;
+  background: transparent; font-size: 11px; line-height: 15px;
+}
 .utexrr-pill .rr-minus { color: #f23645; }
 .utexrr-pill .rr-plus { color: #089981; }
 .utexrr-pill input {
-  flex: none; width: 46px; height: 18px; padding: 0 3px; border-radius: 3px; text-align: center;
+  flex: none; width: 100%; height: 18px; padding: 0; border-radius: 3px; text-align: center;
   background: #131722; border: 1px solid #434651; color: #fff; font: inherit;
 }
 .utexrr-pill input:focus { outline: none; border-color: #2962ff; }

@@ -227,8 +227,10 @@
   function makeRoomForLabels(rect, boxes) {
     S.needSpace = false;
     if (settings.load().autoSpace === false) return;
-    const widest = Math.max(0, ...boxes.filter(Boolean).map((b) => rect.width - b.left));
-    if (widest > 0) ctx.bridge.ensureRightSpace(widest + 16);
+    const span = (b) => (b ? rect.width - b.left : 0);
+    // The qty pill sits beside the Entry label, so that row needs the pill's width too.
+    const need = Math.max(span(boxes[1]), span(boxes[2]), span(boxes[0]) + 6 + ctx.overlay.pillWidth());
+    if (need > 0) ctx.bridge.ensureRightSpace(need + 16);
   }
 
   function rebuildForNewSymbol() {
