@@ -69,10 +69,32 @@
     return out;
   }
 
-  function stepQty(qty, delta, min) {
+  // Quantity rounded to `decimals` places (0 = whole shares), without float noise.
+  function roundQty(qty, decimals) {
+    const d = decimals || 0;
+    const f = Math.pow(10, d);
+    return +(Math.round((Number(qty) || 0) * f) / f).toFixed(d);
+  }
+
+  function stepQty(qty, delta, min, decimals) {
     const m = min == null ? 1 : min;
-    const n = Math.round((Number(qty) || 0) + delta);
+    const n = roundQty((Number(qty) || 0) + delta, decimals);
     return Math.max(m, n);
+  }
+
+  // Smallest power of ten whose value at `price` is at least `minValue` (quote currency):
+  // BTC 73,000 → 0.001, XRP 1.04 → 10, DOGE 0.07 → 1000. Not finer than `decimals` allow.
+  function autoStep(price, minValue, decimals) {
+    const d = decimals || 0;
+    if (!(price > 0) || !(minValue > 0)) return Math.pow(10, -d);
+    const p = Math.max(-d, Math.ceil(Math.log10(minValue / price) - 1e-9));
+    return roundQty(Math.pow(10, p), d);
+  }
+
+  // Plain digits for the Qty field and the order form: no exponent, no thousands separator.
+  function fmtQty(qty, decimals) {
+    const s = roundQty(qty, decimals).toFixed(decimals || 0);
+    return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
   }
 
   function fmtNum(v, decimals) {
@@ -82,10 +104,15 @@
     });
   }
 
-  function fmtMoney(v, signed) {
-    const abs = '$' + fmtNum(Math.abs(v), 2);
+  // Quote currencies shown as a symbol with cents. Anything else (BTC, ETH…) is written
+  // out with 8 decimals: "0.00012345 BTC". No currency (UTEX) means dollars.
+  const MONEY = { USD: '$', USDT: '$', UST: '$', USDC: '$', EUR: '€', GBP: '£', JPY: '¥' };
+
+  function fmtMoney(v, signed, currency) {
+    const sym = currency ? MONEY[String(currency).toUpperCase()] : '$';
+    const abs = sym ? sym + fmtNum(Math.abs(v), 2) : fmtNum(Math.abs(v), 8) + ' ' + currency;
     if (!signed) return (v < 0 ? '−' : '') + abs;
-    if (Math.abs(v) < 0.005) return abs;
+    if (Math.abs(v) < (sym ? 0.005 : 5e-9)) return abs;
     return (v < 0 ? '−' : '+') + abs;
   }
 
@@ -96,7 +123,7 @@
 
   const calc = {
     decimalsFromTick, roundToTick, levelsFromPct, pctFromLevels, mirror,
-    pnl, pct, compute, stepQty, fmtNum, fmtMoney, fmtPct,
+    pnl, pct, compute, roundQty, stepQty, autoStep, fmtQty, fmtNum, fmtMoney, fmtPct,
   };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = calc;

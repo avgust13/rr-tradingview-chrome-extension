@@ -1,7 +1,9 @@
-// Toolbar icon: on a UTEX tab it shows/hides the tool, anywhere else it opens UTEX.
+// Toolbar icon: on a UTEX or Bitfinex tab it shows/hides the tool, anywhere else it opens UTEX.
 // activeTab grants access to the clicked tab, so no host permissions are needed.
+const SUPPORTED = /^https:\/\/(margin\.utex\.io|trading\.bitfinex\.com)\//;
+
 chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.url || !/^https:\/\/margin\.utex\.io\//.test(tab.url)) {
+  if (!tab.url || !SUPPORTED.test(tab.url)) {
     chrome.tabs.create({ url: 'https://margin.utex.io/stocks-usdt/' });
     return;
   }
@@ -15,6 +17,6 @@ chrome.action.onClicked.addListener(async (tab) => {
       },
     });
   } catch (e) {
-    console.warn('[UTEX R/R] toggle failed', e);
+    console.warn('[R/R] toggle failed', e);
   }
 });

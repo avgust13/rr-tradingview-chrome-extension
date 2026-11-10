@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "UTEX Risk/Reward Tool",
-  "version": "0.2.0",
-  "description": "Entry / SL / TP lines on the UTEX chart with ±10 shares buttons and live $ risk/reward from the current price.",
+  "name": "UTEX & Bitfinex Risk/Reward Tool",
+  "version": "0.3.0",
+  "description": "Entry / SL / TP lines on the UTEX and Bitfinex charts with ±Qty buttons and live risk/reward from the current price.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "UTEX R/R — показать/убрать инструмент",
+    "default_title": "R/R — показать/убрать инструмент (UTEX, Bitfinex)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -23,9 +23,13 @@
   "permissions": ["activeTab", "scripting"],
   "content_scripts": [
     {
-      "matches": ["https://margin.utex.io/*"],
+      "matches": [
+        "https://margin.utex.io/*",
+        "https://trading.bitfinex.com/*"
+      ],
       "js": [
         "src/calc.js",
+        "src/sites.js",
         "src/settings.js",
         "src/logo.js",
         "src/chart-bridge.js",

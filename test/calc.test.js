@@ -70,6 +70,38 @@ t('stepQty clamps to min', () => {
   assert.equal(c.stepQty('7', 1), 8);
 });
 
+t('stepQty with decimals (crypto)', () => {
+  assert.equal(c.stepQty(0.01, 0.001, 0.0001, 8), 0.011);
+  assert.equal(c.stepQty(0.1, 0.2, 0.0001, 8), 0.3); // no 0.30000000000000004
+  assert.equal(c.stepQty(0.001, -0.01, 0.0001, 8), 0.0001);
+  assert.equal(c.stepQty(12.5, 0, 1, 0), 13);
+});
+
+t('autoStep: power of ten worth ~10 quote units', () => {
+  assert.equal(c.autoStep(73200, 10, 8), 0.001);
+  assert.equal(c.autoStep(1.0434, 10, 8), 10);
+  assert.equal(c.autoStep(0.067546, 10, 8), 1000);
+  assert.equal(c.autoStep(1, 10, 8), 10);
+  assert.equal(c.autoStep(0.027662, 0.0001, 8), 0.01); // ETH/BTC
+  assert.equal(c.autoStep(1e9, 10, 2), 0.01); // capped by decimals
+});
+
+t('fmtQty', () => {
+  assert.equal(c.fmtQty(151, 0), '151');
+  assert.equal(c.fmtQty(0.0123, 8), '0.0123');
+  assert.equal(c.fmtQty(1e-7, 8), '0.0000001');
+  assert.equal(c.fmtQty(2000, 8), '2000');
+});
+
+t('fmtMoney by quote currency', () => {
+  assert.equal(c.fmtMoney(-12.5, true, 'USD'), '−$12.50');
+  assert.equal(c.fmtMoney(12.5, true, 'USDt'), '+$12.50');
+  assert.equal(c.fmtMoney(1234.5, false, 'EUR'), '€1,234.50');
+  assert.equal(c.fmtMoney(-0.00031250, true, 'BTC'), '−0.00031250 BTC');
+  assert.equal(c.fmtMoney(0, true, 'BTC'), '0.00000000 BTC');
+  assert.equal(c.fmtMoney(5, true, null), '+$5.00');
+});
+
 t('formatting', () => {
   assert.equal(c.fmtMoney(-267.28, true), '−$267.28');
   assert.equal(c.fmtMoney(1451.364, true), '+$1,451.36');

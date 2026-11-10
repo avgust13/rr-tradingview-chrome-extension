@@ -5,15 +5,18 @@
   if (NS.started) return;
   NS.started = true;
 
-  const { calc, settings, bridge: B, Lines, Overlay, orderForm } = NS;
+  const { calc, settings, site, bridge: B, Lines, Overlay, orderForm } = NS;
   const BOOT_POLL_MS = 1000;
   const SYMBOL_FALLBACK_MS = 3000;
+  const QD = site.qtyDecimals;
 
   const cfg = settings.load();
+  const sz0 = settings.sizing(null) || { qty: 1, step: 1 }; // per-ticker sites size on activation
   const S = {
     active: false,
     side: cfg.side === -1 ? -1 : 1,
-    qty: Math.max(1, cfg.qty | 0),
+    qty: Math.max(1, sz0.qty | 0),
+    step: sz0.step,
     frozen: false,
     entry: null,
     stop: null,
@@ -32,6 +35,25 @@
   const tick = () => ctx.bridge.tick();
   const round = (p) => calc.roundToTick(p, tick());
   const fmtPrice = (p) => calc.fmtNum(p, calc.decimalsFromTick(tick()));
+  const fmtMoney = (v, signed) => calc.fmtMoney(v, signed, ctx.bridge.quote());
+  const fmtQty = (q) => calc.fmtQty(q, QD);
+  // Shift+click / wheel / arrows step; also the smallest Qty (1 share on UTEX).
+  const fineStep = () => Math.max(calc.roundQty(site.fineStep(S.step), QD), Math.pow(10, -QD));
+  const clampQty = (q) => calc.stepQty(q, 0, fineStep(), QD);
+
+  // Qty and step for the current ticker. On per-ticker sites a first-time pair gets a
+  // round step worth about $10 and Qty = 10 steps.
+  function loadSizing(price) {
+    S.ticker = ctx.bridge.ticker();
+    const sz = settings.sizing(S.ticker);
+    if (sz) {
+      S.step = sz.step;
+      S.qty = clampQty(sz.qty);
+    } else {
+      S.step = calc.autoStep(price, site.stepValue(ctx.bridge.quote()), QD);
+      S.qty = clampQty(10 * S.step);
+    }
+  }
 
   function rememberDistances() {
     if (S.entry == null || S.stop == null || S.target == null) return;
@@ -64,11 +86,12 @@
     const price = ctx.bridge.lastPrice();
     if (price == null) { ctx.overlay.toast('Нет цены — график ещё грузится'); return; }
     S.frozen = false;
+    loadSizing(price);
     placeLevels(price);
     try {
       buildLines();
     } catch (e) {
-      console.warn('[UTEX R/R] createOrderLine failed', e);
+      console.warn('[R/R] createOrderLine failed', e);
       ctx.overlay.toast('Не удалось нарисовать линии на графике');
       return;
     }
@@ -104,10 +127,9 @@
     onToggle: toggle,
     onClose: deactivate,
     onStep(dir, fine) {
-      const step = fine ? 1 : settings.load().step;
-      setQty(calc.stepQty(S.qty, dir * step));
+      setQty(calc.stepQty(S.qty, dir * (fine ? fineStep() : S.step), fineStep(), QD));
     },
-    onQty: (n) => setQty(calc.stepQty(n, 0)),
+    onQty: (n) => setQty(clampQty(n)),
     onSide() {
       if (S.entry != null) {
         const m = calc.mirror(S.entry, S.stop, S.target, tick());
@@ -125,25 +147,33 @@
       }
     },
     onForm() {
-      const r = orderForm.fillQty(S.side, S.qty);
-      ctx.overlay.toast(r.ok
-        ? `Qty ${S.qty} → ${S.side > 0 ? 'Buy' : 'Sell'} форма`
+      const base = ctx.bridge.base();
+      const r = orderForm.fillQty(S.side, fmtQty(S.qty), base);
+      const btn = S.side > 0 ? 'Buy' : 'Sell';
+      ctx.overlay.toast(
+        r.ok ? `Qty ${fmtQty(S.qty)}${r.unit ? ' ' + r.unit : ''} → форма, жмите ${btn}`
+        : r.reason === 'market' ? `Форма ордера на ${r.unit}, а график — ${base}`
         : 'Поле Qty в форме ордера не найдено');
     },
     onSettings(patch) {
+      if (patch.step != null) {
+        S.step = Math.max(calc.roundQty(patch.step, QD), Math.pow(10, -QD));
+        delete patch.step;
+        setQty(clampQty(S.qty));
+      }
       ctx.overlay.settings = settings.save(patch);
     },
   };
 
   function setQty(n) {
     S.qty = n;
-    settings.save({ qty: n });
+    settings.saveSizing(S.ticker, S.qty, S.step);
   }
 
   // ---------- render loop ----------
 
   function viewState() {
-    return { active: S.active, qty: S.qty, side: S.side, frozen: S.frozen, step: settings.load().step };
+    return { active: S.active, qty: fmtQty(S.qty), side: S.side, frozen: S.frozen, step: fmtQty(S.step) };
   }
 
   function render(live) {
@@ -153,18 +183,18 @@
     });
     const sideTxt = S.side > 0 ? 'LONG' : 'SHORT';
     const entryText = S.frozen && r.live != null
-      ? `${sideTxt} @ ${fmtPrice(S.entry)} · P&L ${calc.fmtMoney(r.live, true)} (${calc.fmtPct(r.livePct)})`
-      : `${sideTxt} @ ${fmtPrice(S.entry)} · ${calc.fmtMoney(r.value)}`;
-    lines.set('entry', { price: S.entry, text: entryText, qty: String(S.qty) });
+      ? `${sideTxt} @ ${fmtPrice(S.entry)} · P&L ${fmtMoney(r.live, true)} (${calc.fmtPct(r.livePct)})`
+      : `${sideTxt} @ ${fmtPrice(S.entry)} · ${fmtMoney(r.value)}`;
+    lines.set('entry', { price: S.entry, text: entryText, qty: fmtQty(S.qty) });
     lines.set('stop', {
       price: S.stop,
       text: `SL ${fmtPrice(S.stop)} (${calc.fmtPct(r.atStopPct)})`,
-      qty: calc.fmtMoney(r.atStop, true),
+      qty: fmtMoney(r.atStop, true),
     });
     lines.set('target', {
       price: S.target,
       text: `TP ${fmtPrice(S.target)} (${calc.fmtPct(r.atTargetPct)})` + (r.rr != null ? ` · R:R ${r.rr.toFixed(2)}` : ''),
-      qty: calc.fmtMoney(r.atTarget, true),
+      qty: fmtMoney(r.atTarget, true),
     });
     return r;
   }
@@ -208,8 +238,8 @@
     if (rect && r) {
       const off = (y) => y == null || y < 0 || y > rect.height;
       const parts = [];
-      if (off(yS)) parts.push({ cls: 'loss', text: 'SL ' + calc.fmtMoney(r.atStop, true) });
-      if (off(yT)) parts.push({ cls: 'gain', text: 'TP ' + calc.fmtMoney(r.atTarget, true) });
+      if (off(yS)) parts.push({ cls: 'loss', text: 'SL ' + fmtMoney(r.atStop, true) });
+      if (off(yT)) parts.push({ cls: 'gain', text: 'TP ' + fmtMoney(r.atTarget, true) });
       ctx.overlay.setSummary(parts);
     }
     if (!rect || !lines) return ctx.overlay.placePill(rect, yE);
@@ -238,6 +268,7 @@
     S.rebuildAt = 0;
     if (price == null) { S.rebuildAt = Date.now() + 500; return; }
     S.frozen = false;
+    loadSizing(price);
     placeLevels(round(price));
     try { buildLines(); } catch (e) { S.rebuildAt = Date.now() + 500; }
   }

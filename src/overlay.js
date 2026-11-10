@@ -63,14 +63,16 @@
 
       // Dock (bottom-left): toggle + secondary controls
       const dock = (this.dock = el(doc, 'div', 'utexrr-dock'));
-      this.toggle = el(doc, 'button', 'rr-toggle', null, 'UTEX R/R — показать/убрать инструмент (Alt+Shift+R)');
+      const site = NS.site;
+      this.view = {};
+      this.toggle = el(doc, 'button', 'rr-toggle', null, 'R/R — показать/убрать инструмент (Alt+Shift+R)');
       this.toggle.append(logo(doc, 14), el(doc, 'span', '', 'R/R'));
       this.ctrls = el(doc, 'span', 'rr-ctrls');
       this.btnSide = el(doc, 'button', 'rr-side', 'LONG', 'Переключить Long/Short (SL и TP зеркалятся)');
       this.btnFreeze = el(doc, 'button', 'rr-freeze', '', '');
       this.sum = el(doc, 'span', 'rr-sum', null, 'Линия за пределами видимой шкалы');
       this.sumKey = '';
-      this.btnForm = el(doc, 'button', 'rr-form', '→ Form', 'Подставить Qty в форму ордера UTEX (ордер не отправляется)');
+      this.btnForm = el(doc, 'button', 'rr-form', '→ Form', `Подставить Qty в форму ордера ${site.name} (ордер не отправляется)`);
       this.btnGear = el(doc, 'button', 'rr-gear', '⚙', 'Настройки');
       this.btnClose = el(doc, 'button', 'rr-close', '✕', 'Убрать инструмент');
       this.ctrls.append(this.btnSide, this.btnFreeze, this.sum, this.btnForm, this.btnGear, this.btnClose);
@@ -79,12 +81,13 @@
 
       // Pill on the Entry line: the ±step buttons the tool is about
       const pill = (this.pill = el(doc, 'div', 'utexrr-pill'));
-      this.btnMinus = el(doc, 'button', 'rr-minus', '', 'Уменьшить Qty (Shift — на 1)');
+      const fineTxt = site.qtyDecimals > 0 ? 'Shift — на 1/10 шага' : 'Shift — на 1';
+      this.btnMinus = el(doc, 'button', 'rr-minus', '', `Уменьшить Qty (${fineTxt})`);
       this.qty = el(doc, 'input');
       this.qty.type = 'text';
-      this.qty.inputMode = 'numeric';
-      this.qty.title = 'Количество акций (колесо мыши, ↑/↓ — ±1)';
-      this.btnPlus = el(doc, 'button', 'rr-plus', '', 'Увеличить Qty (Shift — на 1)');
+      this.qty.inputMode = site.qtyDecimals > 0 ? 'decimal' : 'numeric';
+      this.qty.title = `${site.qtyTitle} (колесо мыши, ↑/↓ — мелкий шаг)`;
+      this.btnPlus = el(doc, 'button', 'rr-plus', '', `Увеличить Qty (${fineTxt})`);
       pill.append(this.btnPlus, this.qty, this.btnMinus); // stacked: more on top, less below
       isolate(pill);
 
@@ -116,7 +119,7 @@
         pop.appendChild(row);
         return inp;
       };
-      this.inStep = field('Шаг Qty', '1');
+      this.inStep = field(site.perTicker ? 'Шаг Qty (эта пара)' : 'Шаг Qty', site.qtyDecimals > 0 ? 'any' : '1');
       this.inSl = field('SL по умолч., %', '0.1');
       this.inTp = field('TP по умолч., %', '0.1');
       const spaceRow = el(doc, 'label', 'rr-check', 'Освобождать место справа');
@@ -125,7 +128,8 @@
       this.inSpace.title = 'При включении инструмента сдвигать график так, чтобы подписи линий не закрывали свечи';
       spaceRow.prepend(this.inSpace);
       pop.appendChild(spaceRow);
-      pop.appendChild(el(doc, 'div', 'rr-hint', 'SL/TP по умолчанию — дистанция от цены при запуске и смене тикера. Перетаскивание линий запоминает новую дистанцию.'));
+      pop.appendChild(el(doc, 'div', 'rr-hint', 'SL/TP по умолчанию — дистанция от цены при запуске и смене тикера. Перетаскивание линий запоминает новую дистанцию.'
+        + (site.perTicker ? ' Qty и шаг запоминаются для каждой пары отдельно.' : '')));
       const ok = el(doc, 'button', '', 'OK');
       ok.addEventListener('click', () => this.commitSettings());
       pop.appendChild(ok);
@@ -138,14 +142,14 @@
     }
 
     commitQty() {
-      const n = parseInt(String(this.qty.value).replace(/[^\d]/g, ''), 10);
-      this.h.onQty(Number.isFinite(n) ? n : 1);
+      const n = parseFloat(String(this.qty.value).replace(',', '.').replace(/[^\d.]/g, ''));
+      this.h.onQty(Number.isFinite(n) ? n : 0); // controller clamps to its minimum
     }
 
     togglePop(force) {
       const show = force != null ? force : !this.pop.classList.contains(VIS);
       if (show && this.settings) {
-        this.inStep.value = this.settings.step;
+        this.inStep.value = this.view.step;
         this.inSl.value = +this.settings.slPct.toFixed(2);
         this.inTp.value = +this.settings.tpPct.toFixed(2);
         this.inSpace.checked = this.settings.autoSpace !== false;
@@ -160,10 +164,10 @@
         return Number.isFinite(v) && v >= min ? v : null;
       };
       const patch = { autoSpace: this.inSpace.checked };
-      const step = num(this.inStep, 1);
+      const step = num(this.inStep, NS.site.qtyDecimals > 0 ? 1e-8 : 1);
       const sl = num(this.inSl, 0.01);
       const tp = num(this.inTp, 0.01);
-      if (step != null) patch.step = Math.round(step);
+      if (step != null) patch.step = step; // controller rounds to the site's precision
       if (sl != null) patch.slPct = sl;
       if (tp != null) patch.tpPct = tp;
       this.h.onSettings(patch);
@@ -171,17 +175,24 @@
     }
 
     // Called every frame while the tool is active; cheap when nothing changed.
+    // qty and step come formatted ("151", "0.0123").
     update({ active, qty, side, frozen, step }) {
+      this.view = { qty, step };
       this.toggle.classList.toggle(ON, active);
       this.ctrls.classList.toggle(VIS, active);
       this.pill.classList.toggle(VIS, active);
       if (!active) this.togglePop(false);
-      const stepTxt = String(step);
-      if (this.btnMinus.textContent !== '−' + stepTxt) {
-        this.btnMinus.textContent = '−' + stepTxt;
-        this.btnPlus.textContent = '+' + stepTxt;
+      if (this.btnMinus.textContent !== '−' + step) {
+        this.btnMinus.textContent = '−' + step;
+        this.btnPlus.textContent = '+' + step;
       }
-      if (this.doc.activeElement !== this.qty && this.qty.value !== String(qty)) this.qty.value = String(qty);
+      if (this.doc.activeElement !== this.qty && this.qty.value !== qty) this.qty.value = qty;
+      // Fractional amounts ("0.0123") need a wider pill than share counts.
+      const chars = Math.max(qty.length, step.length + 1);
+      if (chars !== this.pillChars) {
+        this.pillChars = chars;
+        this.pill.style.width = chars > 4 ? `calc(${chars}ch + 14px)` : '';
+      }
       const sideTxt = side > 0 ? 'LONG' : 'SHORT';
       if (this.btnSide.textContent !== sideTxt) {
         this.btnSide.textContent = sideTxt;
