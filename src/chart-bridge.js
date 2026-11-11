@@ -1,6 +1,6 @@
 // Everything that touches TradingView internals lives here, so a site/TV update
-// is fixed in one place. Verified against Charting Library v27.000 on margin.utex.io
-// and v27.005 on trading.bitfinex.com.
+// is fixed in one place. Verified against Charting Library v27.000 on margin.utex.io,
+// v27.005 on trading.bitfinex.com and v28.5.0 on app.hyperliquid.xyz.
 (function () {
   'use strict';
   const NS = (window.__utexRR = window.__utexRR || {});
@@ -69,7 +69,7 @@
       return si && si.pricescale ? (si.minmov || 1) / si.pricescale : 0.01;
     }
 
-    // Human ticker ("DOCN", "BTC/USD"); chart().symbol() is UTEX's internal id. null while loading.
+    // Human ticker ("DOCN", "BTC/USD", "BTCUSD"); chart().symbol() is UTEX's internal id. null while loading.
     ticker() {
       const si = this.symbolInfo();
       return (si && (si.name || si.ticker)) || null;
@@ -81,11 +81,9 @@
       return (si && si.currency_code) || null;
     }
 
-    // Base currency of a pair ("BTC" in "BTC/USD"); null for stock tickers.
+    // Base currency of a pair ("BTC" in "BTC/USD", "BTCUSD" on Hyperliquid); null for stocks.
     base() {
-      const t = this.ticker();
-      const i = t ? t.indexOf('/') : -1;
-      return i > 0 ? t.slice(0, i) : null;
+      return NS.site.base(this.ticker());
     }
 
     // Main price pane (first row of the chart table).

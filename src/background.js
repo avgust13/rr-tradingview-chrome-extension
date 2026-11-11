@@ -1,6 +1,6 @@
-// Toolbar icon: on a UTEX or Bitfinex tab it shows/hides the tool, anywhere else it opens UTEX.
+// Toolbar icon: on a supported exchange tab it shows/hides the tool, anywhere else it opens UTEX.
 // activeTab grants access to the clicked tab, so no host permissions are needed.
-const SUPPORTED = /^https:\/\/(margin\.utex\.io|trading\.bitfinex\.com)\//;
+const SUPPORTED = /^https:\/\/(margin\.utex\.io|trading\.bitfinex\.com|app\.hyperliquid\.xyz)\//;
 
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab.url || !SUPPORTED.test(tab.url)) {

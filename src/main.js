@@ -8,7 +8,9 @@
   const { calc, settings, site, bridge: B, Lines, Overlay, orderForm } = NS;
   const BOOT_POLL_MS = 1000;
   const SYMBOL_FALLBACK_MS = 3000;
-  const QD = site.qtyDecimals;
+  // Qty decimals. Fixed per site, except where each coin has its own precision
+  // (Hyperliquid): then it follows the ticker, see syncDecimals().
+  let QD = site.qtyDecimals;
 
   const cfg = settings.load();
   const sz0 = settings.sizing(null) || { qty: 1, step: 1 }; // per-ticker sites size on activation
@@ -38,16 +40,30 @@
   const fmtMoney = (v, signed) => calc.fmtMoney(v, signed, ctx.bridge.quote());
   const fmtQty = (q) => calc.fmtQty(q, QD);
   // Shift+click / wheel / arrows step; also the smallest Qty (1 share on UTEX).
-  const fineStep = () => Math.max(calc.roundQty(site.fineStep(S.step), QD), Math.pow(10, -QD));
+  const fineStep = () => Math.max(calc.roundQty(site.fineStep(S.step), QD), minQty());
   const clampQty = (q) => calc.stepQty(q, 0, fineStep(), QD);
+
+  const minQty = () => Math.pow(10, -QD);
+  const clampStep = (s) => Math.max(calc.roundQty(s, QD), minQty());
+
+  // Picks up the current ticker's size precision. Returns true when it changed.
+  // On Hyperliquid it comes from the API and may arrive after the tool is already on.
+  function syncDecimals() {
+    const d = site.sizeDecimals ? site.sizeDecimals(S.ticker) : null;
+    const qd = d == null ? site.qtyDecimals : d;
+    if (qd === QD) return false;
+    QD = qd;
+    return true;
+  }
 
   // Qty and step for the current ticker. On per-ticker sites a first-time pair gets a
   // round step worth about $10 and Qty = 10 steps.
   function loadSizing(price) {
     S.ticker = ctx.bridge.ticker();
+    syncDecimals();
     const sz = settings.sizing(S.ticker);
     if (sz) {
-      S.step = sz.step;
+      S.step = clampStep(sz.step);
       S.qty = clampQty(sz.qty);
     } else {
       S.step = calc.autoStep(price, site.stepValue(ctx.bridge.quote()), QD);
@@ -147,17 +163,24 @@
       }
     },
     onForm() {
-      const base = ctx.bridge.base();
+      // Qty belongs to S.ticker. Right after a symbol switch the chart is already on the new
+      // one: don't hand the old coin's Qty to the new market (10000 DOGE → 10000 TSLA).
+      if (S.rebuildAt || ctx.bridge.ticker() !== S.ticker) {
+        ctx.overlay.toast('График переключается на другой тикер — подождите секунду');
+        return;
+      }
+      const base = site.base(S.ticker);
       const r = orderForm.fillQty(S.side, fmtQty(S.qty), base);
       const btn = S.side > 0 ? 'Buy' : 'Sell';
       ctx.overlay.toast(
         r.ok ? `Qty ${fmtQty(S.qty)}${r.unit ? ' ' + r.unit : ''} → форма, жмите ${btn}`
         : r.reason === 'market' ? `Форма ордера на ${r.unit}, а график — ${base}`
+        : r.reason === 'unit' ? `Размер в форме — в ${r.unit}, переключите на ${base}`
         : 'Поле Qty в форме ордера не найдено');
     },
     onSettings(patch) {
       if (patch.step != null) {
-        S.step = Math.max(calc.roundQty(patch.step, QD), Math.pow(10, -QD));
+        S.step = clampStep(patch.step);
         delete patch.step;
         setQty(clampQty(S.qty));
       }
@@ -216,6 +239,11 @@
     if (S.rebuildAt) {
       if (now >= S.rebuildAt) rebuildForNewSymbol();
     } else {
+      if (syncDecimals()) {
+        // Precision arrived late or differs from the guess: snap step and Qty to it.
+        S.step = clampStep(S.step);
+        setQty(clampQty(S.qty));
+      }
       const live = br.lastPrice();
       if (!S.frozen && live != null) S.entry = round(live);
       if (lines && lines.broken) { try { buildLines(); } catch (e) { /* retry next frame */ } }

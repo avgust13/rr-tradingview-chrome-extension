@@ -23,14 +23,19 @@
 
   const norm = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+  // Size in dollars instead of coins (Hyperliquid's unit picker set to USDC).
+  const isStable = (s) => /^USD/.test(norm(s));
+
   // qty: already formatted text. base: the chart's base currency (null for stocks).
   // Refuses when the form is on another market than the chart, e.g. after switching the
-  // chart's symbol from inside TradingView.
+  // chart's symbol from inside TradingView, or when the form takes the size in dollars.
   function fillQty(side, qty, base) {
     const el = NS.site.qtyInput(side);
     if (!el) return { ok: false, reason: 'missing' };
     const unit = NS.site.formUnit(el);
-    if (unit && base && norm(unit) !== norm(base)) return { ok: false, reason: 'market', unit };
+    if (unit && base && norm(unit) !== norm(base)) {
+      return { ok: false, reason: isStable(unit) && !isStable(base) ? 'unit' : 'market', unit };
+    }
     setReactInput(el, qty);
     flash(el);
     return { ok: true, unit };

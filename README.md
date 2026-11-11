@@ -1,8 +1,8 @@
-# UTEX & Bitfinex Risk/Reward Tool
+# R/R for TradingView
 
 <img src="icons/logo.svg" width="64" alt="logo">
 
-Chrome-расширение для графиков UTEX (margin.utex.io) и Bitfinex (trading.bitfinex.com). Рисует на графике линии Entry / SL / TP, а у линии входа ставит кнопки −10 / +10 shares (на Bitfinex — ± шаг в монетах). Сколько будет минус на стопе и плюс на тейке, считается от **текущей** цены.
+Chrome-расширение для графиков TradingView на биржах UTEX (margin.utex.io), Bitfinex (trading.bitfinex.com) и Hyperliquid (app.hyperliquid.xyz). Рисует на графике линии Entry / SL / TP, а у линии входа ставит кнопки −10 / +10 shares (на Bitfinex и Hyperliquid — ± шаг в монетах). Сколько будет минус на стопе и плюс на тейке, считается от **текущей** цены.
 
 Родной инструмент Long/Short Position расширение не трогает: оно рисует свои линии рядом.
 
@@ -11,16 +11,16 @@ Chrome-расширение для графиков UTEX (margin.utex.io) и Bit
 1. Откройте `chrome://extensions`.
 2. Включите **Developer mode** (справа сверху).
 3. Нажмите **Load unpacked** и выберите эту папку (где лежит `manifest.json`).
-4. Закрепите значок: меню-пазл 🧩 в панели Chrome → 📌 у «UTEX & Bitfinex Risk/Reward Tool».
-5. Откройте (или обновите) страницу, например https://margin.utex.io/stocks-usdt/exchange-pro/DOCN-USDT или https://trading.bitfinex.com/t/BTC:USD?type=exchange
+4. Закрепите значок: меню-пазл 🧩 в панели Chrome → 📌 у «R/R for TradingView».
+5. Откройте (или обновите) страницу, например https://margin.utex.io/stocks-usdt/exchange-pro/DOCN-USDT, https://trading.bitfinex.com/t/BTC:USD?type=exchange или https://app.hyperliquid.xyz/trade/BTC
 
 Нужен Chrome 111+ (используется `world: "MAIN"` в content scripts).
 
-После правок в коде нажмите ⟳ у расширения в `chrome://extensions` и обновите вкладку UTEX / Bitfinex.
+После правок в коде нажмите ⟳ у расширения в `chrome://extensions` и обновите вкладку биржи.
 
 ## Использование
 
-Включить или убрать инструмент можно тремя способами: кнопкой **R/R** (с логотипом) внизу слева на графике, значком расширения в панели Chrome (на вкладке UTEX или Bitfinex; на любой другой он откроет UTEX) или клавишами **Alt+Shift+R**.
+Включить или убрать инструмент можно тремя способами: кнопкой **R/R** (с логотипом) внизу слева на графике, значком расширения в панели Chrome (на вкладке UTEX, Bitfinex или Hyperliquid; на любой другой он откроет UTEX) или клавишами **Alt+Shift+R**.
 
 Всё разнесено так, чтобы не закрывать свечи:
 
@@ -35,41 +35,49 @@ Chrome-расширение для графиков UTEX (margin.utex.io) и Bit
   - **LONG / SHORT**: переключают сторону, SL и TP зеркалятся относительно входа.
   - **● LIVE / 🔒 FIX**: в режиме LIVE вход идёт за текущей ценой. В режиме FIX вход заморожен, а на линии Entry показывается живой P&L. Перетащить линию Entry = зафиксировать вход на новой цене.
   - Если SL или TP ушли за видимую шкалу, их −$ / +$ показываются прямо в доке.
-  - **→ Form**: вписывает Qty в форму ордера (на UTEX — в Buy для long, Sell для short; на Bitfinex — в общее поле Amount). Ордер **не отправляется**, кнопку Buy/Sell нажимаете сами.
+  - **→ Form**: вписывает Qty в форму ордера (на UTEX — в Buy для long, Sell для short; на Bitfinex — в общее поле Amount; на Hyperliquid — в общее поле Size). Ордер **не отправляется**, кнопку Buy/Sell нажимаете сами.
   - **⚙**: шаг Qty, SL/TP по умолчанию (в %), «Освобождать место справа».
   - **✕** (или крестик на линии Entry): убрать инструмент.
-- При смене тикера инструмент сам переставляется на новую цену с теми же % дистанциями.
+- При смене тикера инструмент сам переставляется на новую цену с теми же % дистанциями. Пока он переставляется, **→ Form** ничего не вписывает, чтобы Qty старого тикера не попал в форму нового.
 
-Настройки хранятся в `localStorage` страницы под ключом `utexRR.settings` (у UTEX и Bitfinex они свои).
+Настройки хранятся в `localStorage` страницы под ключом `utexRR.settings` (у каждой биржи свои).
 
-### Bitfinex: чем отличается
+### Bitfinex и Hyperliquid: чем отличается
 
 - **Qty — в базовой валюте пары**: 0.01 в BTC/USD — это 0.01 BTC. Дробные значения можно вписать руками, запятая тоже подходит.
 - **Qty и шаг запоминаются для каждой пары отдельно**, потому что 0.01 BTC и 0.01 DOGE — совсем разные суммы. На новой паре шаг подбирается сам: круглое число монет примерно на $10 (BTC ≈ 73 000 → 0.001, XRP ≈ 1 → 10, DOGE ≈ 0.07 → 1000), а Qty = 10 шагов. Шаг этой пары меняется в ⚙.
 - **Shift+клик, колесо и ↑/↓** меняют Qty на 1/10 шага (на UTEX — на 1 акцию).
-- **Деньги — в валюте котировки**: `$` для USD / USDt, `€` для EUR, а для пар к BTC или ETH — `−0.00005590 BTC`.
-- **→ Form** проверяет, что форма ордера открыта на ту же монету, что и график. Если график переключили изнутри TradingView, а форма осталась на другой паре, ничего не вписывается и появляется подсказка.
+- **Деньги — в валюте котировки**: `$` для USD / USDt / USDC, `€` для EUR, а для пар к BTC или ETH — `−0.00005590 BTC`.
+- **→ Form** проверяет, что форма ордера открыта на ту же монету, что и график. Если график и форма на разных парах, ничего не вписывается и появляется подсказка.
+
+### Только Hyperliquid
+
+- **Точность Qty — как у монеты на бирже** (`szDecimals`: BTC — 5 знаков, ETH — 4, HYPE — 2, DOGE — целые). Hyperliquid молча игнорирует Size с лишними знаками, поэтому Qty и шаг округляются под монету. Точность берётся из публичного API `api.hyperliquid.xyz/info`, пока она грузится, используется 8 знаков.
+- Работают перпы (`BTC`), HIP-3 рынки (`xyz:TSLA`) и спот (`HYPE/USDC`).
+- Если в форме Size переключён на USDC, **→ Form** ничего не вписывает и просит переключить на монету: Qty в расширении всегда в монетах.
 
 ## Как устроено
 
 | Файл | Что делает |
 |---|---|
 | `src/calc.js` | Чистая математика: P&L на SL/TP, R:R, проценты, округление к тику и Qty, автошаг, форматирование (в т.ч. по валюте котировки) |
-| `src/sites.js` | Отличия бирж: точность Qty, Qty на пару или общий, мелкий шаг, поле Qty в форме ордера |
+| `src/hyperliquid.js` | Hyperliquid: тикер графика → монета (`BTCUSD` → `BTC`, `xyz:TSLAUSD` → `xyz:TSLA`, `HYPE/USDC-@107` → `@107`), точность Size из API |
+| `src/sites.js` | Отличия бирж: точность Qty, Qty на пару или общий, мелкий шаг, базовая валюта тикера, поле Qty в форме ордера |
 | `src/chart-bridge.js` | Доступ к TradingView: iframe `tradingview_*` → `tradingViewApi`, текущая цена, тик, цена → пиксель, пустая зона справа |
 | `src/lines.js` | Линии через `chart.createOrderLine()` и расчёт, где TradingView рисует их подписи |
 | `src/overlay.js`, `src/styles.js` | «Таблетка» ±Qty, док, настройки и подсказки внутри iframe графика |
 | `src/logo.js` | Логотип (прямоугольники на сетке 128×128): кнопка на графике и иконки |
-| `src/order-form.js` | Перенос Qty в форму ордера (React-safe): UTEX `#BUYqty` / `#SELLqty`, Bitfinex `#orderform-panel input[name=amount]` |
-| `src/settings.js` | Настройки в `localStorage`, Qty/шаг по парам (Bitfinex) |
+| `src/order-form.js` | Перенос Qty в форму ордера (React-safe): UTEX `#BUYqty` / `#SELLqty`, Bitfinex `#orderform-panel input[name=amount]`, Hyperliquid `[data-testid=sz-input] input` |
+| `src/settings.js` | Настройки в `localStorage`, Qty/шаг по парам (Bitfinex, Hyperliquid) |
 | `src/main.js` | Состояние, цикл обновления (`requestAnimationFrame`), смена тикера, пересоздание iframe |
 | `src/background.js` | Клик по значку расширения в панели Chrome |
 | `icons/` | `logo.svg` и PNG 16/32/48/128, генерируются `node tools/make-icons.js` |
 
-Проверено на TradingView Charting Library **v27.000** (UTEX) и **v27.005** (Bitfinex). Хрупкие места:
+Проверено на TradingView Charting Library **v27.000** (UTEX), **v27.005** (Bitfinex) и **v28.5.0** (Hyperliquid). Хрупкие места:
 
 - `chartModel().mainSeries()` (текущая цена, цена → пиксель) — внутренний API TradingView. Всё такое собрано в `chart-bridge.js`.
-- Поля формы берутся из DOM бирж (см. `sites.js`): `#BUYqty` / `#SELLqty` на UTEX; на Bitfinex `#orderform-panel input[name="amount"]` и подпись «Amount BTC» над ним.
+- Поля формы берутся из DOM бирж (см. `sites.js`): `#BUYqty` / `#SELLqty` на UTEX; на Bitfinex `#orderform-panel input[name="amount"]` и подпись «Amount BTC» над ним; на Hyperliquid `[data-testid="sz-input"] input` и единица (BTC / USDC) справа от него.
+- Имена тикеров Hyperliquid (`BTCUSD`, `xyz:TSLAUSD`, `HYPE/USDC-@107`) задаёт фронтенд биржи; разбор — в `src/hyperliquid.js`.
 - Геометрия подписей линий (`lines.js`, `BODY_PAD` и т.д.) замерена по пикселям на v27.
 - В TradingView есть глобальные правила вроде `.show { display: block !important }`, поэтому все классы расширения с префиксом `utexrr-` / `rr-`.
 
@@ -79,10 +87,14 @@ Chrome-расширение для графиков UTEX (margin.utex.io) и Bit
 node test/calc.test.js
 ```
 
+```bash
+node test/hyperliquid.test.js
+```
+
 Пересобрать иконки после правки `src/logo.js`:
 
 ```bash
 node tools/make-icons.js
 ```
 
-В DevTools на странице UTEX или Bitfinex: `__utexRR.debug()` показывает состояние, `__utexRR.stop()` убирает всё, `__utexRR.toggle()` включает или выключает инструмент.
+В DevTools на странице биржи: `__utexRR.debug()` показывает состояние, `__utexRR.stop()` убирает всё, `__utexRR.toggle()` включает или выключает инструмент.
