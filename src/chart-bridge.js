@@ -145,6 +145,31 @@
       }
     }
 
+    // Last `count` daily bars of the chart's symbol from the site's own datafeed, which the
+    // widget leaves on the parent page as window[<iframe id>].datafeed. [{ time (ms), open,
+    // high, low, close }]. A separate request: the chart's own bars are untouched.
+    dailyBars(count) {
+      const si = this.symbolInfo();
+      let feed = null;
+      try { feed = window[this.iframe.id].datafeed; } catch (e) { /* not exposed */ }
+      if (!si || !feed || typeof feed.getBars !== 'function') return Promise.reject(new Error('no datafeed'));
+      const res = (si.supported_resolutions || []).find((r) => /^1?D$/.test(r)) || '1D';
+      const to = Math.floor(Date.now() / 1000);
+      // Calendar days: stocks skip weekends and holidays.
+      const from = to - Math.ceil(count * 1.6 + 5) * 86400;
+      return new Promise((ok, fail) => {
+        const timer = setTimeout(() => fail(new Error('timeout')), 10000);
+        try {
+          feed.getBars(si, res, { from, to, countBack: count, firstDataRequest: false },
+            (bars) => { clearTimeout(timer); ok(bars || []); },
+            (err) => { clearTimeout(timer); fail(new Error(String(err))); });
+        } catch (e) {
+          clearTimeout(timer);
+          fail(e);
+        }
+      });
+    }
+
     // Returns an unsubscribe function.
     subscribe(eventName, cb) {
       try {

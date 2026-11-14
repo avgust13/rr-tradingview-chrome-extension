@@ -84,7 +84,22 @@
     return null;
   }
 
-  const hl = { parseTicker, sizeDecimals, load };
+  // ---------- daily candles (for the ATR stop) ----------
+
+  // The site's own datafeed can't be used for this: its getBars() stores the requested
+  // resolution on the shared datafeed object, which would break the chart's live candles.
+  // -> [{ time (ms), open, high, low, close }], oldest first.
+  function dailyBars(ticker, count) {
+    const t = parseTicker(ticker);
+    if (!t) return Promise.reject(new Error('unknown symbol ' + ticker));
+    const end = Date.now();
+    const req = { coin: t.coin, interval: '1d', startTime: end - (count + 1) * 86400000, endTime: end };
+    return post({ type: 'candleSnapshot', req }).then((rows) => (Array.isArray(rows) ? rows : []).map((c) => ({
+      time: c.t, open: +c.o, high: +c.h, low: +c.l, close: +c.c,
+    })));
+  }
+
+  const hl = { parseTicker, sizeDecimals, load, dailyBars };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = hl;
   else (root.__utexRR = root.__utexRR || {}).hyperliquid = hl;

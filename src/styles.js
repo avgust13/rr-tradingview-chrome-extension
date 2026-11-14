@@ -7,7 +7,7 @@
   const NS = (window.__utexRR = window.__utexRR || {});
 
   NS.CSS = `
-.utexrr-dock, .utexrr-pill, .utexrr-pop, .utexrr-toast {
+.utexrr-dock, .utexrr-pill, .utexrr-pop, .utexrr-toast, .utexrr-tip {
   position: fixed; z-index: 50; box-sizing: border-box;
   font: 600 12px/1 -apple-system, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
   color: #d1d4dc; user-select: none; white-space: nowrap;
@@ -25,14 +25,17 @@
   transform: translateY(-100%); opacity: .9; transition: opacity .15s;
 }
 .utexrr-dock:hover { opacity: 1; }
-.utexrr-dock .rr-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px 0 4px; }
+/* Icon-only buttons; the tooltip says what each does */
+.utexrr-dock .rr-ico-btn {
+  display: inline-flex; align-items: center; justify-content: center; width: 22px; min-width: 0; padding: 0;
+}
+.utexrr-dock .rr-ico { display: block; width: 14px; height: 14px; }
 .utexrr-dock .rr-toggle.rr-on { background: #2962ff; color: #fff; }
 .utexrr-dock .rr-logo { display: block; flex: none; }
 .utexrr-dock .rr-ctrls { display: none; align-items: center; gap: 4px; }
 .utexrr-dock .rr-ctrls.rr-visible { display: inline-flex; }
 .utexrr-dock .rr-side.rr-long { background: #089981; color: #fff; }
 .utexrr-dock .rr-side.rr-short { background: #f23645; color: #fff; }
-.utexrr-dock .rr-freeze.rr-on { background: #f7a600; color: #131722; }
 .utexrr-dock .rr-sum { display: none; gap: 8px; padding: 0 4px; }
 .utexrr-dock .rr-sum.rr-visible { display: inline-flex; }
 .utexrr-dock .rr-loss { color: #f23645; }
@@ -78,5 +81,17 @@
   opacity: 0; transition: opacity .2s; pointer-events: none;
 }
 .utexrr-toast.rr-visible { opacity: 1; }
+
+/* Hover tooltip: name, then a grey explanation */
+.utexrr-tip {
+  z-index: 51; max-width: 240px; padding: 6px 8px; border-radius: 4px; white-space: normal;
+  background: #2a2e39; border: 1px solid #434651; box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  opacity: 0; visibility: hidden; transition: opacity .12s; pointer-events: none;
+}
+.utexrr-tip.rr-visible { opacity: 1; visibility: visible; }
+.utexrr-tip .rr-tip-head { color: #fff; line-height: 1.3; }
+.utexrr-tip .rr-tip-desc {
+  margin-top: 3px; color: #b2b5be; font-weight: 400; font-size: 11px; line-height: 1.35; white-space: pre-line;
+}
 `;
 })();

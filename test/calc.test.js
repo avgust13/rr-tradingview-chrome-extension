@@ -110,4 +110,45 @@ t('formatting', () => {
   assert.equal(c.fmtPct(0), '0.00%');
 });
 
+t('levelsFromRisk: TP is rr × the rounded risk', () => {
+  assert.deepEqual(c.levelsFromRisk(100, 1, 2.004, 3, 0.01), { stop: 98, target: 106 });
+  assert.deepEqual(c.levelsFromRisk(100, -1, 2.004, 3, 0.01), { stop: 102, target: 94 });
+  // Risk below one tick still leaves a one-tick stop
+  assert.deepEqual(c.levelsFromRisk(100, 1, 0.001, 3, 0.01), { stop: 99.99, target: 100.03 });
+});
+
+const DAY = 86400000;
+const bar = (d, high, low, close) => ({ time: d * DAY, open: close, high, low, close });
+
+t('atr: mean true range of completed days, gaps count', () => {
+  const bars = [
+    bar(0, 10, 9, 9.5),       // TR 1 (no previous close)
+    bar(1, 11, 10, 10.5),     // TR 1.5 (high − prev close)
+    bar(2, 10.6, 9.6, 10),    // TR 1
+    bar(3, 12, 11.5, 11.8),   // TR 2 (gap up)
+    bar(4, 20, 5, 6),         // still forming at now = day 4
+  ];
+  near(c.atr(bars, 3, 4 * DAY), 1.5);
+  near(c.atr(bars, 10, 4 * DAY), 1.375); // fewer days than the period: mean of what there is
+  near(c.atr(bars.slice().reverse(), 3, 4 * DAY), 1.5); // newest-first input (Bitfinex)
+  near(c.atr(bars, 1, null), 15); // no `now`: the last bar counts
+  assert.equal(c.atr([bar(4, 20, 5, 6)], 5, 4 * DAY), null);
+  assert.equal(c.atr([], 5, 0), null);
+});
+
+t('atr: UTEX DOCN daily bars', () => {
+  const D = (iso, o, h, l, cl) => ({ time: Date.parse(iso), open: o, high: h, low: l, close: cl });
+  const bars = [
+    D('2026-11-05T05:00:00Z', 79.72, 81.215, 69.85, 70.7),
+    D('2026-11-06T05:00:00Z', 78.4, 78.5, 69.78, 72.48),
+    D('2026-11-09T05:00:00Z', 73.66, 79.16, 72.26, 78.3),
+    D('2026-11-10T05:00:00Z', 76.93, 85, 75.38, 79.52),
+    D('2026-11-11T05:00:00Z', 85.9, 89.56, 84.34, 87.15),
+    D('2026-11-12T05:00:00Z', 82.2, 92.24, 81.99, 90.07),
+    D('2026-11-13T05:00:00Z', 90.54, 91.29, 83.5501, 86.32),
+  ];
+  near(c.atr(bars, 5, Date.parse('2026-11-14T12:00:00Z')), 8.90998, 1e-5);
+  near(c.atr(bars, 5, Date.parse('2026-11-14T02:00:00Z')), 9.106, 1e-5); // Nov 13 not closed yet
+});
+
 console.log(`\n${n} tests passed`);

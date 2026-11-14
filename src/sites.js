@@ -24,6 +24,9 @@
       // LIMIT/MARKET/STOP tabs share these ids.
       qtyInput: (side) => document.getElementById(side > 0 ? 'BUYqty' : 'SELLqty'),
       formUnit: () => null,
+      // Daily candles for the ATR stop: [{ time (ms), open, high, low, close }].
+      // UTEX's datafeed keeps its state per resolution, so a 1D request is harmless.
+      dailyBars: (bridge, count) => bridge.dailyBars(count),
     },
     {
       id: 'bitfinex',
@@ -45,6 +48,17 @@
         const label = box && box.querySelector('.ui-fieldlabel__innertag');
         const m = label && label.textContent.trim().match(/\s(\S+)$/);
         return m ? m[1] : null;
+      },
+      // Public candles API (CORS-open): newest first, [MTS, OPEN, CLOSE, HIGH, LOW, VOLUME].
+      // symbolInfo.ticker is the API pair ("BTCUSD", "DOGE:USD"). The datafeed is the fallback.
+      dailyBars: (bridge, count) => {
+        const si = bridge.symbolInfo();
+        if (!si || !si.ticker) return bridge.dailyBars(count);
+        const url = `https://api-pub.bitfinex.com/v2/candles/trade:1D:t${si.ticker}/hist?limit=${count}`;
+        return fetch(url)
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
+          .then((rows) => rows.map(([time, open, close, high, low]) => ({ time, open, high, low, close })))
+          .catch(() => bridge.dailyBars(count));
       },
     },
     {
@@ -70,6 +84,8 @@
         const t = u && u.textContent.trim();
         return t || null;
       },
+      // Info API only, never the datafeed (see hyperliquid.js).
+      dailyBars: (bridge, count) => NS.hyperliquid.dailyBars(bridge.ticker(), count),
     },
   ];
 

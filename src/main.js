@@ -5,9 +5,11 @@
   if (NS.started) return;
   NS.started = true;
 
-  const { calc, settings, site, bridge: B, Lines, Overlay, orderForm } = NS;
+  const { calc, settings, site, bridge: B, Lines, Overlay, orderForm, atr } = NS;
   const BOOT_POLL_MS = 1000;
   const SYMBOL_FALLBACK_MS = 3000;
+  const ATR_WAIT_MS = 1500;   // after a symbol switch, hold the lines this long for the new ATR
+  const FALLBACK_SL_PCT = 2;  // default SL while (or if) the ticker has no daily candles
   // Qty decimals. Fixed per site, except where each coin has its own precision
   // (Hyperliquid): then it follows the ticker, see syncDecimals().
   let QD = site.qtyDecimals;
@@ -19,12 +21,14 @@
     side: cfg.side === -1 ? -1 : 1,
     qty: Math.max(1, sz0.qty | 0),
     step: sz0.step,
-    frozen: false,
-    entry: null,
+    entry: null,       // fixed: set on placement, by dragging the line or by → Price
     stop: null,
     target: null,
     ticker: null,
+    auto: true,        // SL/TP are the ATR defaults, not placed by the user on this ticker
+    waitAtr: null,     // ticker whose defaults went out with FALLBACK_SL_PCT, redone when ATR loads
     rebuildAt: 0,      // >0: waiting for new symbol data, rebuild by this time at the latest
+    switchedAt: 0,     // when the symbol switch was noticed
     needSpace: false,  // make room for the labels right of the last candle on next frame
   };
 
@@ -71,18 +75,76 @@
     }
   }
 
+  // A line was dragged: from now on this ticker opens with these distances, not the ATR ones.
   function rememberDistances() {
-    if (S.entry == null || S.stop == null || S.target == null) return;
+    S.auto = false;
+    S.waitAtr = null;
+    if (S.entry == null || S.stop == null || S.target == null || !S.ticker) return;
     const { slPct, tpPct } = calc.pctFromLevels(S.entry, S.side, S.stop, S.target);
-    if (slPct > 0 && tpPct > 0) settings.save({ slPct, tpPct });
+    if (slPct > 0 && tpPct > 0) settings.saveDistances(S.ticker, slPct, tpPct);
   }
 
-  function placeLevels(price) {
-    const c = settings.load();
-    S.entry = price;
-    const lv = calc.levelsFromPct(price, S.side, c.slPct, c.tpPct, tick());
+  // Entry at `entry` (tick-rounded). SL/TP: the distances dragged earlier on this ticker,
+  // else the ATR defaults.
+  function placeLevels(entry) {
+    S.entry = entry;
+    const d = settings.distances(S.ticker);
+    if (!d) return placeDefaults();
+    S.auto = false;
+    S.waitAtr = null;
+    const lv = calc.levelsFromPct(entry, S.side, d.slPct, d.tpPct, tick());
     S.stop = lv.stop;
     S.target = lv.target;
+  }
+
+  // SL = slAtr × daily ATR from the current entry, TP = rr × that risk. Until the daily
+  // candles are in, SL is FALLBACK_SL_PCT of entry and the levels are redone on arrival.
+  function placeDefaults() {
+    const c = settings.load();
+    const a = atr.value(S.ticker, c.atrDays);
+    const risk = a != null ? a * c.slAtr : S.entry * FALLBACK_SL_PCT / 100;
+    const lv = calc.levelsFromRisk(S.entry, S.side, risk, c.rr, tick());
+    S.stop = lv.stop;
+    S.target = lv.target;
+    S.auto = true;
+    if (a == null) waitForAtr(S.ticker);
+  }
+
+  function waitForAtr(tk) {
+    if (!tk || S.waitAtr === tk) return;
+    S.waitAtr = tk;
+    atr.load(tk, ctx.bridge).then(() => {
+      if (S.waitAtr !== tk) return;
+      S.waitAtr = null;
+      if (!ctx || !S.active || !S.auto || S.rebuildAt || S.ticker !== tk) return;
+      if (atr.value(tk, settings.load().atrDays) == null) {
+        ctx.overlay.toast(`Нет дневных свечей для ATR — SL ${FALLBACK_SL_PCT}% от входа`);
+      } else {
+        placeDefaults();
+      }
+    });
+  }
+
+  // Warm the ATR cache for the chart's symbol so activation places the ATR levels at once.
+  function prefetchAtr() {
+    const tk = ctx && ctx.bridge.ticker();
+    if (tk && !settings.distances(tk)) atr.load(tk, ctx.bridge);
+  }
+
+  // "SL 1×ATR(5) · TP 3R": the defaults, as the Reset tooltip and the toasts show them.
+  function defaultsText() {
+    const c = settings.load();
+    const n = (v) => String(+(+v).toFixed(2));
+    return `SL ${n(c.slAtr)}×ATR(${c.atrDays}) · TP ${n(c.rr)}R`;
+  }
+
+  // The ATR itself for the Reset tooltip: "ATR(5) 1,234.50 (1.84%)".
+  function atrText() {
+    const c = settings.load();
+    const a = S.ticker ? atr.value(S.ticker, c.atrDays) : null;
+    if (a == null) return `ATR(${c.atrDays}): нет данных`;
+    const pctTxt = S.entry ? ` (${calc.fmtNum(a / S.entry * 100, 2)}%)` : '';
+    return `ATR(${c.atrDays}) ${fmtPrice(a)}${pctTxt}`;
   }
 
   function buildLines() {
@@ -101,9 +163,9 @@
     if (!ctx) return;
     const price = ctx.bridge.lastPrice();
     if (price == null) { ctx.overlay.toast('Нет цены — график ещё грузится'); return; }
-    S.frozen = false;
     loadSizing(price);
-    placeLevels(price);
+    prefetchAtr(); // refreshes a stale cache; the levels use what is loaded
+    placeLevels(round(price));
     try {
       buildLines();
     } catch (e) {
@@ -116,7 +178,6 @@
   }
 
   function deactivate() {
-    rememberDistances();
     S.active = false;
     S.rebuildAt = 0;
     if (lines) { lines.remove(); lines = null; }
@@ -133,7 +194,7 @@
   function onLineMove(name, price, final) {
     if (!Number.isFinite(price)) return;
     const p = round(price);
-    if (name === 'entry') { S.frozen = true; S.entry = p; }
+    if (name === 'entry') S.entry = p;
     else if (name === 'stop') S.stop = p;
     else if (name === 'target') S.target = p;
     if (final) rememberDistances();
@@ -155,13 +216,29 @@
       S.side = -S.side;
       settings.save({ side: S.side });
     },
-    onFreeze() {
-      S.frozen = !S.frozen;
-      if (!S.frozen) {
-        const live = ctx.bridge.lastPrice();
-        if (live != null) S.entry = live;
-      }
+    // → Price: entry jumps to the current price, SL and TP stay where they are. Levels the
+    // user placed are remembered as they now stand; ATR defaults stay defaults.
+    onPrice() {
+      const live = ctx.bridge.lastPrice();
+      if (live == null || S.rebuildAt) return;
+      S.entry = round(live);
+      if (!S.auto) rememberDistances();
     },
+    // Reset button: forget this ticker's dragged levels, entry at the current price,
+    // SL/TP from ATR again.
+    onReset() {
+      const live = ctx.bridge.lastPrice();
+      if (S.rebuildAt || live == null || ctx.bridge.ticker() !== S.ticker) {
+        ctx.overlay.toast('График переключается на другой тикер — подождите секунду');
+        return;
+      }
+      settings.clearDistances(S.ticker);
+      S.entry = round(live);
+      placeDefaults();
+      ctx.overlay.toast(`${defaultsText()} от ${fmtPrice(S.entry)}`);
+    },
+    // For the Reset button's tooltip, read on hover.
+    resetInfo: () => `${defaultsText()} · ${atrText()}`,
     onForm() {
       // Qty belongs to S.ticker. Right after a symbol switch the chart is already on the new
       // one: don't hand the old coin's Qty to the new market (10000 DOGE → 10000 TSLA).
@@ -184,7 +261,11 @@
         delete patch.step;
         setQty(clampQty(S.qty));
       }
+      const c = settings.load();
+      const redo = ['slAtr', 'rr', 'atrDays'].some((k) => patch[k] != null && patch[k] !== c[k]);
       ctx.overlay.settings = settings.save(patch);
+      // New defaults apply right away where the levels are still the defaults.
+      if (redo && S.active && S.auto && !S.rebuildAt && S.entry != null) placeDefaults();
     },
   };
 
@@ -196,18 +277,19 @@
   // ---------- render loop ----------
 
   function viewState() {
-    return { active: S.active, qty: fmtQty(S.qty), side: S.side, frozen: S.frozen, step: fmtQty(S.step) };
+    return { active: S.active, qty: fmtQty(S.qty), side: S.side, step: fmtQty(S.step) };
   }
 
   function render(live) {
     const r = calc.compute({
+      // Live price to the tick like the entry: some feeds carry extra decimals (UTEX 387.109).
       side: S.side, qty: S.qty, entry: S.entry, stop: S.stop, target: S.target,
-      last: S.frozen ? live : null,
+      last: live != null ? round(live) : null,
     });
     const sideTxt = S.side > 0 ? 'LONG' : 'SHORT';
-    const entryText = S.frozen && r.live != null
-      ? `${sideTxt} @ ${fmtPrice(S.entry)} · P&L ${fmtMoney(r.live, true)} (${calc.fmtPct(r.livePct)})`
-      : `${sideTxt} @ ${fmtPrice(S.entry)} · ${fmtMoney(r.value)}`;
+    // Value for sizing; P&L shows how far the price has moved off the planned entry.
+    const entryText = `${sideTxt} @ ${fmtPrice(S.entry)} · ${fmtMoney(r.value)}`
+      + (r.live != null ? ` · P&L ${fmtMoney(r.live, true)}` : '');
     lines.set('entry', { price: S.entry, text: entryText, qty: fmtQty(S.qty) });
     lines.set('stop', {
       price: S.stop,
@@ -234,6 +316,8 @@
     else if (tk && !S.rebuildAt && tk !== S.ticker) {
       if (lines) { lines.remove(); lines = null; }
       S.rebuildAt = now + SYMBOL_FALLBACK_MS;
+      S.switchedAt = now;
+      prefetchAtr(); // the new ticker's default SL
     }
 
     if (S.rebuildAt) {
@@ -245,7 +329,6 @@
         setQty(clampQty(S.qty));
       }
       const live = br.lastPrice();
-      if (!S.frozen && live != null) S.entry = round(live);
       if (lines && lines.broken) { try { buildLines(); } catch (e) { /* retry next frame */ } }
       const r = lines && S.entry != null ? render(live) : null;
       placeControls(r);
@@ -295,7 +378,11 @@
     const price = ctx.bridge.lastPrice();
     S.rebuildAt = 0;
     if (price == null) { S.rebuildAt = Date.now() + 500; return; }
-    S.frozen = false;
+    // Give the new ticker's ATR a moment, so SL/TP don't jump right after appearing.
+    if (atr.pending(ctx.bridge.ticker()) && Date.now() - S.switchedAt < ATR_WAIT_MS) {
+      S.rebuildAt = Date.now() + 100;
+      return;
+    }
     loadSizing(price);
     placeLevels(round(price));
     try { buildLines(); } catch (e) { S.rebuildAt = Date.now() + 500; }
@@ -326,9 +413,12 @@
     ctx = { bridge, overlay, unsubs: [] };
 
     // New data after a symbol change: rebuild right away instead of waiting for the fallback.
+    // Also fires on symbol switches while the tool is off: warm that ticker's ATR.
     ctx.unsubs.push(bridge.subscribe('onDataLoaded', () => {
       if (S.active && S.rebuildAt) S.rebuildAt = Date.now();
+      prefetchAtr();
     }));
+    prefetchAtr();
 
     bridge.win.addEventListener('keydown', onKey, true);
     ctx.unsubs.push(() => { try { bridge.win.removeEventListener('keydown', onKey, true); } catch (e) { /* gone */ } });

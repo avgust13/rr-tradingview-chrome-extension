@@ -3,9 +3,13 @@
   'use strict';
   const NS = (window.__utexRR = window.__utexRR || {});
   const KEY = 'utexRR.settings';
+  // Default SL/TP on a ticker the user hasn't adjusted: SL = slAtr × ATR(atrDays) of daily
+  // candles, TP = rr × that risk. levels: per-ticker SL/TP distances (% of entry) once dragged.
   // autoSpace: scroll the chart once on activation so the labels sit right of the last candle.
   // step/qty: used where sizing is global (UTEX); per-ticker sites keep them in byTicker.
-  const DEFAULTS = { step: 10, slPct: 2, tpPct: 4, side: 1, qty: 10, autoSpace: true, byTicker: {} };
+  const DEFAULTS = {
+    step: 10, slAtr: 1, rr: 3, atrDays: 5, side: 1, qty: 10, autoSpace: true, byTicker: {}, levels: {},
+  };
 
   let cur = null;
 
@@ -14,6 +18,9 @@
     let saved = {};
     try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { saved = {}; }
     cur = Object.assign({}, DEFAULTS, saved);
+    // Up to 0.4 SL/TP were one global % for every ticker; now they come from each ticker's ATR.
+    delete cur.slPct;
+    delete cur.tpPct;
     return cur;
   }
 
@@ -40,5 +47,26 @@
     return save({ byTicker });
   }
 
-  NS.settings = { load, save, sizing, saveSizing, DEFAULTS };
+  // SL/TP distances the user set on this ticker by dragging: { slPct, tpPct } (% of entry).
+  // null = never adjusted, use the ATR defaults. Per ticker on every site: ATRs differ.
+  function distances(ticker) {
+    const d = ticker && load().levels && load().levels[ticker];
+    return d && d.slPct > 0 && d.tpPct > 0 ? { slPct: d.slPct, tpPct: d.tpPct } : null;
+  }
+
+  function saveDistances(ticker, slPct, tpPct) {
+    if (!ticker) return load();
+    const levels = Object.assign({}, load().levels);
+    levels[ticker] = { slPct: +slPct.toFixed(4), tpPct: +tpPct.toFixed(4) };
+    return save({ levels });
+  }
+
+  function clearDistances(ticker) {
+    const levels = Object.assign({}, load().levels);
+    if (!(ticker in levels)) return load();
+    delete levels[ticker];
+    return save({ levels });
+  }
+
+  NS.settings = { load, save, sizing, saveSizing, distances, saveDistances, clearDistances, DEFAULTS };
 })();

@@ -24,6 +24,36 @@
     };
   }
 
+  // Stop `risk` (price units) from entry, target `rr` times the risk on the other side.
+  // The target uses the stop's rounded distance, so R:R comes out as asked. At least one tick.
+  function levelsFromRisk(entry, side, risk, rr, tick) {
+    const r = Math.max(risk, tick > 0 ? tick : 0);
+    const stop = roundToTick(entry - side * r, tick);
+    return { stop, target: roundToTick(entry + side * rr * Math.abs(entry - stop), tick) };
+  }
+
+  const DAY_MS = 86400000;
+
+  // Average true range of the last `period` completed daily bars: a plain mean of
+  // max(high − low, |high − prev close|, |low − prev close|). bars: [{ time (ms), high, low,
+  // close }] in any order. A bar still forming at `now` is left out: half a day of range
+  // would shrink the average. null when there is no completed bar.
+  function atr(bars, period, now) {
+    const n = Math.max(1, Math.round(period) || 1);
+    const done = (bars || [])
+      .filter((b) => b && isFinite(b.time) && isFinite(b.high) && isFinite(b.low) && isFinite(b.close)
+        && b.high >= b.low && (now == null || b.time + DAY_MS <= now))
+      .sort((a, b) => a.time - b.time);
+    if (!done.length) return null;
+    const tr = done.slice(-n).map((b, i, last) => {
+      const prev = i > 0 ? last[i - 1] : done[done.length - last.length - 1];
+      const range = b.high - b.low;
+      return prev ? Math.max(range, Math.abs(b.high - prev.close), Math.abs(b.low - prev.close)) : range;
+    });
+    const v = tr.reduce((s, x) => s + x, 0) / tr.length;
+    return v > 0 ? v : null;
+  }
+
   // Distances of existing levels from entry, as positive-ish percentages for the given side.
   function pctFromLevels(entry, side, stop, target) {
     return {
@@ -122,7 +152,7 @@
   }
 
   const calc = {
-    decimalsFromTick, roundToTick, levelsFromPct, pctFromLevels, mirror,
+    decimalsFromTick, roundToTick, levelsFromPct, levelsFromRisk, atr, pctFromLevels, mirror,
     pnl, pct, compute, roundQty, stepQty, autoStep, fmtQty, fmtNum, fmtMoney, fmtPct,
   };
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "R/R for TradingView",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Entry / SL / TP lines with ±Qty buttons and live risk/reward on the TradingView charts of UTEX, Bitfinex and Hyperliquid.",
   "icons": {
     "16": "icons/icon16.png",
@@ -35,6 +35,7 @@
         "src/settings.js",
         "src/logo.js",
         "src/chart-bridge.js",
+        "src/atr.js",
         "src/lines.js",
         "src/order-form.js",
         "src/styles.js",

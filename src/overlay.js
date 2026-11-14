@@ -1,6 +1,8 @@
 // HTML controls on top of the chart pane, inside the chart iframe. Kept off the candles:
 //  - pill: narrow stack of [+10] / [qty] / [−10], glued to the Entry label (labels sit at the price scale);
-//  - dock: bottom-left corner, the R/R toggle plus LONG/SHORT, LIVE/FIX, → Form, ⚙, ✕.
+//  - dock: bottom-left corner, icon buttons: R/R toggle, long/short, entry to price, reset SL/TP,
+//    Qty → order form, settings, close;
+//  - tip: hover tooltip, the only place the buttons are explained.
 (function () {
   'use strict';
   const NS = (window.__utexRR = window.__utexRR || {});
@@ -12,6 +14,8 @@
   const PILL_W = 44;        // fallbacks while the pill is still hidden (matches styles.js)
   const PILL_H = 56;
   const EDGE_PAD = 14;      // keep the pill this far inside the pane
+  const TIP_DELAY_MS = 350; // hover this long before the first tooltip; moving on to the next is instant
+  const TIP_GRACE_MS = 120; // the tip outlives mouseleave this long, so the pointer can reach a neighbour
   // State classes are prefixed: TradingView has global rules like .show{display:block!important}.
   const VIS = 'rr-visible';
   const ON = 'rr-on';
@@ -24,9 +28,10 @@
     return e;
   }
 
+  const NSVG = 'http://www.w3.org/2000/svg';
+
   // Same drawing as icons/logo.svg: TP zone over SL zone, split by the entry line.
   function logo(doc, size) {
-    const NSVG = 'http://www.w3.org/2000/svg';
     const svg = doc.createElementNS(NSVG, 'svg');
     svg.setAttribute('viewBox', '0 0 128 128');
     svg.setAttribute('width', size);
@@ -42,6 +47,52 @@
     return svg;
   }
 
+  // Button icons on a 24×24 grid, stroked in the button's text colour. [tag, attributes];
+  // the attributes override the stroke defaults in icon().
+  const gearTeeth = Array.from({ length: 8 }, (_, k) => {
+    const a = (k * Math.PI) / 4;
+    const at = (r) => `${(12 + r * Math.cos(a)).toFixed(2)} ${(12 + r * Math.sin(a)).toFixed(2)}`;
+    return `M${at(6.5)}L${at(9.6)}`;
+  }).join('');
+  const ICONS = {
+    long: [['path', { d: 'M5 19L19 5M9 5h10v10' }]],              // arrow up
+    short: [['path', { d: 'M5 5l14 14M19 9v10H9' }]],             // arrow down
+    price: [                                                      // target: "go to the price"
+      ['circle', { cx: 12, cy: 12, r: 6 }],
+      ['path', { d: 'M12 2v4M12 18v4M2 12h4M18 12h4' }],
+      ['circle', { cx: 12, cy: 12, r: 1.6, fill: 'currentColor', stroke: 'none' }],
+    ],
+    reset: [['path', { d: 'M3 4v6h6' }], ['path', { d: 'M5.2 15A8.5 8.5 0 1 0 7 6.2L3 10' }]],
+    form: [['path', { d: 'M14 4h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5M4 12h11M11 8l4 4-4 4' }]], // into a box
+    gear: [
+      ['circle', { cx: 12, cy: 12, r: 6.5 }],
+      ['path', { d: gearTeeth, 'stroke-width': 3.2, 'stroke-linecap': 'butt' }],
+      ['circle', { cx: 12, cy: 12, r: 2.5 }],
+    ],
+    close: [['path', { d: 'M6 6l12 12M18 6L6 18' }]],
+  };
+
+  function icon(doc, name) {
+    const svg = doc.createElementNS(NSVG, 'svg');
+    const base = {
+      viewBox: '0 0 24 24', class: 'rr-ico', fill: 'none', stroke: 'currentColor', 'stroke-width': 2,
+      'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true',
+    };
+    for (const k in base) svg.setAttribute(k, base[k]);
+    for (const [tag, attrs] of ICONS[name]) {
+      const n = doc.createElementNS(NSVG, tag);
+      for (const k in attrs) n.setAttribute(k, attrs[k]);
+      svg.appendChild(n);
+    }
+    return svg;
+  }
+
+  function iconButton(doc, cls, name) {
+    const b = el(doc, 'button', 'rr-ico-btn ' + cls);
+    b.appendChild(icon(doc, name));
+    return b;
+  }
+
   // Keep keyboard/mouse input on our controls away from TradingView
   // (typing digits on the chart opens its symbol search, wheel zooms, etc).
   function isolate(node) {
@@ -51,33 +102,47 @@
   }
 
   class Overlay {
-    // h: { onToggle, onStep(dir, fine), onQty(n), onSide, onFreeze, onForm, onClose, onSettings(patch) }
+    // h: { onToggle, onStep(dir, fine), onQty(n), onSide, onPrice, onReset, resetInfo() -> text,
+    //      onForm, onClose, onSettings(patch) }
     constructor(doc, h) {
       this.doc = doc;
       this.h = h;
       this.toastTimer = 0;
+      this.tipTimer = 0;
+      this.tips = new WeakMap(); // node -> tooltip text, or a function giving it at hover time
 
       this.style = el(doc, 'style');
       this.style.textContent = NS.CSS;
       doc.head.appendChild(this.style);
 
-      // Dock (bottom-left): toggle + secondary controls
+      // Dock (bottom-left): icon buttons only, each explained by its hover tooltip.
       const dock = (this.dock = el(doc, 'div', 'utexrr-dock'));
       const site = NS.site;
       this.view = {};
-      this.toggle = el(doc, 'button', 'rr-toggle', null, 'R/R — показать/убрать инструмент (Alt+Shift+R)');
-      this.toggle.append(logo(doc, 14), el(doc, 'span', '', 'R/R'));
+      this.tip = el(doc, 'div', 'utexrr-tip');
+      this.toggle = el(doc, 'button', 'rr-ico-btn rr-toggle');
+      this.toggle.appendChild(logo(doc, 14));
       this.ctrls = el(doc, 'span', 'rr-ctrls');
-      this.btnSide = el(doc, 'button', 'rr-side', 'LONG', 'Переключить Long/Short (SL и TP зеркалятся)');
-      this.btnFreeze = el(doc, 'button', 'rr-freeze', '', '');
-      this.sum = el(doc, 'span', 'rr-sum', null, 'Линия за пределами видимой шкалы');
+      this.btnSide = el(doc, 'button', 'rr-ico-btn rr-side'); // icon and tooltip follow the side, see update()
+      this.btnPrice = iconButton(doc, 'rr-price', 'price');
+      this.btnReset = iconButton(doc, 'rr-reset', 'reset');
+      this.btnForm = iconButton(doc, 'rr-form', 'form');
+      this.sum = el(doc, 'span', 'rr-sum');
       this.sumKey = '';
-      this.btnForm = el(doc, 'button', 'rr-form', '→ Form', `Подставить Qty в форму ордера ${site.name} (ордер не отправляется)`);
-      this.btnGear = el(doc, 'button', 'rr-gear', '⚙', 'Настройки');
-      this.btnClose = el(doc, 'button', 'rr-close', '✕', 'Убрать инструмент');
-      this.ctrls.append(this.btnSide, this.btnFreeze, this.sum, this.btnForm, this.btnGear, this.btnClose);
+      this.btnGear = iconButton(doc, 'rr-gear', 'gear');
+      this.btnClose = iconButton(doc, 'rr-close', 'close');
+      this.ctrls.append(this.btnSide, this.btnPrice, this.btnReset, this.btnForm, this.sum, this.btnGear, this.btnClose);
       dock.append(this.toggle, this.ctrls);
       isolate(dock);
+      this.setTip(this.toggle, 'R/R — показать / убрать инструмент\nAlt+Shift+R или значок расширения в панели Chrome');
+      this.setTip(this.btnPrice, 'Вход — на текущую цену\nSL и TP остаются на своих уровнях');
+      // Read at hover time: shows this ticker's ATR.
+      this.setTip(this.btnReset, () => 'Сбросить SL/TP по ATR\nЗабыть перетащенные SL/TP этого тикера и поставить'
+        + ' их заново от текущей цены.\n' + h.resetInfo());
+      this.setTip(this.btnForm, `Qty в форму ордера ${site.name}\nОрдер не отправляется: Buy / Sell жмёте сами`);
+      this.setTip(this.sum, 'Линия за видимой шкалой\nP&L на её уровне');
+      this.setTip(this.btnGear, 'Настройки\nШаг Qty, SL в ATR, TP в R:R, период ATR');
+      this.setTip(this.btnClose, 'Убрать инструмент\nТо же, что крестик на линии Entry');
 
       // Pill on the Entry line: the ±step buttons the tool is about
       const pill = (this.pill = el(doc, 'div', 'utexrr-pill'));
@@ -102,7 +167,8 @@
       });
       this.qty.addEventListener('wheel', (e) => { e.preventDefault(); h.onStep(e.deltaY < 0 ? 1 : -1, true); }, { passive: false });
       this.btnSide.addEventListener('click', () => h.onSide());
-      this.btnFreeze.addEventListener('click', () => h.onFreeze());
+      this.btnPrice.addEventListener('click', () => h.onPrice());
+      this.btnReset.addEventListener('click', () => h.onReset());
       this.btnForm.addEventListener('click', () => h.onForm());
       this.btnGear.addEventListener('click', () => this.togglePop());
       this.btnClose.addEventListener('click', () => h.onClose());
@@ -120,15 +186,17 @@
         return inp;
       };
       this.inStep = field(site.perTicker ? 'Шаг Qty (эта пара)' : 'Шаг Qty', site.qtyDecimals > 0 ? 'any' : '1');
-      this.inSl = field('SL по умолч., %', '0.1');
-      this.inTp = field('TP по умолч., %', '0.1');
+      this.inSlAtr = field('SL, × ATR', '0.1');
+      this.inRr = field('TP, × риск (R:R)', '0.5');
+      this.inAtrDays = field('ATR, дней', '1');
       const spaceRow = el(doc, 'label', 'rr-check', 'Освобождать место справа');
       this.inSpace = el(doc, 'input');
       this.inSpace.type = 'checkbox';
       this.inSpace.title = 'При включении инструмента сдвигать график так, чтобы подписи линий не закрывали свечи';
       spaceRow.prepend(this.inSpace);
       pop.appendChild(spaceRow);
-      pop.appendChild(el(doc, 'div', 'rr-hint', 'SL/TP по умолчанию — дистанция от цены при запуске и смене тикера. Перетаскивание линий запоминает новую дистанцию.'
+      pop.appendChild(el(doc, 'div', 'rr-hint', 'На новом тикере SL — на N × ATR от входа (средний диапазон дневных свечей за закрытые дни), TP — на R:R × риск.'
+        + ' Перетащенные SL/TP запоминаются для тикера, кнопка ↺ в доке возвращает их к ATR.'
         + (site.perTicker ? ' Qty и шаг запоминаются для каждой пары отдельно.' : '')));
       const ok = el(doc, 'button', '', 'OK');
       ok.addEventListener('click', () => this.commitSettings());
@@ -138,7 +206,46 @@
 
       this.toast_ = el(doc, 'div', 'utexrr-toast');
 
-      doc.body.append(this.dock, this.pill, this.pop, this.toast_);
+      doc.body.append(this.dock, this.pill, this.pop, this.toast_, this.tip);
+    }
+
+    // Hover tooltip of a dock button, shown above the dock: first line is the name, the rest
+    // explains it. text: a string or a function (read at hover time). Can be replaced any time.
+    setTip(node, text) {
+      const bound = this.tips.has(node);
+      this.tips.set(node, text);
+      if (bound) return;
+      node.addEventListener('mouseenter', () => this.showTip(node));
+      node.addEventListener('mouseleave', () => this.hideTip(TIP_GRACE_MS));
+      node.addEventListener('click', () => this.hideTip());
+    }
+
+    showTip(node) {
+      clearTimeout(this.tipTimer);
+      const delay = this.tip.classList.contains(VIS) ? 0 : TIP_DELAY_MS;
+      this.tipTimer = setTimeout(() => {
+        if (this.pop.classList.contains(VIS)) return; // would cover the settings opened above the dock
+        const t = this.tips.get(node);
+        const [head, ...rest] = String(typeof t === 'function' ? t() : t).split('\n');
+        this.tip.replaceChildren(el(this.doc, 'div', 'rr-tip-head', head));
+        if (rest.length) this.tip.appendChild(el(this.doc, 'div', 'rr-tip-desc', rest.join('\n')));
+        this.tip.classList.add(VIS);
+        const r = node.getBoundingClientRect();
+        const tw = this.tip.offsetWidth;
+        const th = this.tip.offsetHeight;
+        const x = r.left + r.width / 2 - tw / 2;
+        const y = this.dock.getBoundingClientRect().top - th - 6;
+        const maxX = this.doc.documentElement.clientWidth - tw - 4;
+        this.tip.style.left = Math.max(4, Math.min(x, maxX)) + 'px';
+        this.tip.style.top = Math.max(4, y) + 'px';
+      }, delay);
+    }
+
+    // ms: hide after this delay unless showTip() comes first (the pointer moved to a neighbour).
+    hideTip(ms) {
+      clearTimeout(this.tipTimer);
+      if (ms) this.tipTimer = setTimeout(() => this.tip.classList.remove(VIS), ms);
+      else this.tip.classList.remove(VIS);
     }
 
     commitQty() {
@@ -148,10 +255,12 @@
 
     togglePop(force) {
       const show = force != null ? force : !this.pop.classList.contains(VIS);
+      if (show) this.hideTip();
       if (show && this.settings) {
         this.inStep.value = this.view.step;
-        this.inSl.value = +this.settings.slPct.toFixed(2);
-        this.inTp.value = +this.settings.tpPct.toFixed(2);
+        this.inSlAtr.value = this.settings.slAtr;
+        this.inRr.value = this.settings.rr;
+        this.inAtrDays.value = this.settings.atrDays;
         this.inSpace.checked = this.settings.autoSpace !== false;
       }
       this.pop.classList.toggle(VIS, show);
@@ -165,23 +274,25 @@
       };
       const patch = { autoSpace: this.inSpace.checked };
       const step = num(this.inStep, NS.site.qtyDecimals > 0 ? 1e-8 : 1);
-      const sl = num(this.inSl, 0.01);
-      const tp = num(this.inTp, 0.01);
+      const slAtr = num(this.inSlAtr, 0.05);
+      const rr = num(this.inRr, 0.1);
+      const days = num(this.inAtrDays, 1);
       if (step != null) patch.step = step; // controller rounds to the site's precision
-      if (sl != null) patch.slPct = sl;
-      if (tp != null) patch.tpPct = tp;
+      if (slAtr != null) patch.slAtr = slAtr;
+      if (rr != null) patch.rr = rr;
+      if (days != null) patch.atrDays = Math.min(30, Math.round(days)); // atr.js loads 40 daily bars
       this.h.onSettings(patch);
       this.togglePop(false);
     }
 
     // Called every frame while the tool is active; cheap when nothing changed.
     // qty and step come formatted ("151", "0.0123").
-    update({ active, qty, side, frozen, step }) {
+    update({ active, qty, side, step }) {
       this.view = { qty, step };
       this.toggle.classList.toggle(ON, active);
       this.ctrls.classList.toggle(VIS, active);
       this.pill.classList.toggle(VIS, active);
-      if (!active) this.togglePop(false);
+      if (!active) { this.togglePop(false); this.hideTip(); }
       if (this.btnMinus.textContent !== '−' + step) {
         this.btnMinus.textContent = '−' + step;
         this.btnPlus.textContent = '+' + step;
@@ -193,18 +304,13 @@
         this.pillChars = chars;
         this.pill.style.width = chars > 4 ? `calc(${chars}ch + 14px)` : '';
       }
-      const sideTxt = side > 0 ? 'LONG' : 'SHORT';
-      if (this.btnSide.textContent !== sideTxt) {
-        this.btnSide.textContent = sideTxt;
+      if (side !== this.sideShown) {
+        this.sideShown = side;
+        this.btnSide.replaceChildren(icon(this.doc, side > 0 ? 'long' : 'short'));
         this.btnSide.classList.toggle('rr-long', side > 0);
         this.btnSide.classList.toggle('rr-short', side < 0);
-      }
-      if (this.btnFreeze.classList.contains(ON) !== frozen || !this.btnFreeze.textContent) {
-        this.btnFreeze.classList.toggle(ON, frozen);
-        this.btnFreeze.textContent = frozen ? '🔒 FIX' : '● LIVE';
-        this.btnFreeze.title = frozen
-          ? 'Вход зафиксирован (линию Entry можно двигать). Нажмите — вход снова за текущей ценой'
-          : 'Вход идёт за текущей ценой. Нажмите — зафиксировать вход и смотреть живой P&L';
+        this.setTip(this.btnSide, (side > 0 ? 'Long\nНажмите — Short' : 'Short\nНажмите — Long')
+          + ': SL и TP зеркалятся относительно входа');
       }
     }
 
@@ -280,7 +386,8 @@
 
     destroy() {
       clearTimeout(this.toastTimer);
-      for (const n of [this.style, this.dock, this.pill, this.pop, this.toast_]) n.remove();
+      clearTimeout(this.tipTimer);
+      for (const n of [this.style, this.dock, this.pill, this.pop, this.toast_, this.tip]) n.remove();
     }
   }
 
