@@ -67,9 +67,12 @@
   box-shadow: 0 4px 12px rgba(0,0,0,.5);
 }
 .utexrr-pop.rr-visible { display: flex; }
-.utexrr-pop label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 500; }
+.utexrr-pop label, .utexrr-pop .rr-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 500; }
 .utexrr-pop label.rr-check { justify-content: flex-start; gap: 6px; cursor: pointer; }
 .utexrr-pop label.rr-check input { width: auto; height: auto; margin: 0; }
+.utexrr-pop label.rr-check.rr-off { opacity: .45; cursor: default; }
+.utexrr-pop .rr-seg { display: inline-flex; gap: 2px; }
+.utexrr-pop .rr-seg button.rr-on { background: #2962ff; color: #fff; }
 .utexrr-pop input {
   width: 60px; height: 20px; padding: 0 4px; border-radius: 3px; text-align: right;
   background: #131722; border: 1px solid #434651; color: #fff; font: inherit;

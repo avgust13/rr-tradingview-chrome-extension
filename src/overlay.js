@@ -1,5 +1,6 @@
 // HTML controls on top of the chart pane, inside the chart iframe. Kept off the candles:
-//  - pill: narrow stack of [+10] / [qty] / [−10], glued to the Entry label (labels sit at the price scale);
+//  - pill: narrow stack of [+10] / [qty] / [−10], glued to the Entry label (labels sit at the price
+//    scale, or at the pane's left edge when chosen in settings);
 //  - dock: bottom-left corner, icon buttons: R/R toggle, long/short, entry to price, reset SL/TP,
 //    Qty → order form, settings, close;
 //  - tip: hover tooltip, the only place the buttons are explained.
@@ -141,7 +142,7 @@
         + ' их заново от текущей цены.\n' + h.resetInfo());
       this.setTip(this.btnForm, `Qty в форму ордера ${site.name}\nОрдер не отправляется: Buy / Sell жмёте сами`);
       this.setTip(this.sum, 'Линия за видимой шкалой\nP&L на её уровне');
-      this.setTip(this.btnGear, 'Настройки\nШаг Qty, SL в ATR, TP в R:R, период ATR');
+      this.setTip(this.btnGear, 'Настройки\nШаг Qty, SL в ATR, TP в R:R, период ATR, подписи слева / справа');
       this.setTip(this.btnClose, 'Убрать инструмент\nТо же, что крестик на линии Entry');
 
       // Pill on the Entry line: the ±step buttons the tool is about
@@ -189,7 +190,23 @@
       this.inSlAtr = field('SL, × ATR', '0.1');
       this.inRr = field('TP, × риск (R:R)', '0.5');
       this.inAtrDays = field('ATR, дней', '1');
-      const spaceRow = el(doc, 'label', 'rr-check', 'Освобождать место справа');
+      // Where the line labels and the pill sit; applied on OK like the rest.
+      const sideRow = el(doc, 'div', 'rr-row', 'Подписи линий');
+      const seg = el(doc, 'span', 'rr-seg');
+      this.labelBtns = {};
+      for (const [val, txt, tip] of [
+        ['left', 'Слева', 'У левого края графика'],
+        ['right', 'Справа', 'У шкалы цен, в пустой зоне после последней свечи'],
+      ]) {
+        const b = el(doc, 'button', '', txt, tip);
+        b.type = 'button';
+        b.addEventListener('click', () => this.pickLabelSide(val));
+        seg.appendChild(b);
+        this.labelBtns[val] = b;
+      }
+      sideRow.appendChild(seg);
+      pop.appendChild(sideRow);
+      const spaceRow = (this.spaceRow = el(doc, 'label', 'rr-check', 'Освобождать место справа'));
       this.inSpace = el(doc, 'input');
       this.inSpace.type = 'checkbox';
       this.inSpace.title = 'При включении инструмента сдвигать график так, чтобы подписи линий не закрывали свечи';
@@ -201,7 +218,10 @@
       const ok = el(doc, 'button', '', 'OK');
       ok.addEventListener('click', () => this.commitSettings());
       pop.appendChild(ok);
-      pop.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.commitSettings(); });
+      // Enter on a focused button is its own click (Слева / Справа / OK), not a commit.
+      pop.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') this.commitSettings();
+      });
       isolate(pop);
 
       this.toast_ = el(doc, 'div', 'utexrr-toast');
@@ -262,9 +282,19 @@
         this.inRr.value = this.settings.rr;
         this.inAtrDays.value = this.settings.atrDays;
         this.inSpace.checked = this.settings.autoSpace !== false;
+        this.pickLabelSide(this.settings.labelSide === 'left' ? 'left' : 'right');
       }
       this.pop.classList.toggle(VIS, show);
       if (show) this.placePop();
+    }
+
+    // Choice in the open popover; saved by commitSettings(). Making room right of the last
+    // candle only matters for labels on the right.
+    pickLabelSide(val) {
+      this.labelSide = val;
+      for (const k in this.labelBtns) this.labelBtns[k].classList.toggle(ON, k === val);
+      this.inSpace.disabled = val === 'left';
+      this.spaceRow.classList.toggle('rr-off', val === 'left');
     }
 
     commitSettings() {
@@ -272,7 +302,7 @@
         const v = parseFloat(inp.value);
         return Number.isFinite(v) && v >= min ? v : null;
       };
-      const patch = { autoSpace: this.inSpace.checked };
+      const patch = { autoSpace: this.inSpace.checked, labelSide: this.labelSide === 'left' ? 'left' : 'right' };
       const step = num(this.inStep, NS.site.qtyDecimals > 0 ? 1e-8 : 1);
       const slAtr = num(this.inSlAtr, 0.05);
       const rr = num(this.inRr, 0.1);
@@ -344,9 +374,10 @@
 
     // y: Entry price in pane px. label: the Entry label box; obstacles: all label boxes
     // (pane px). freeX: pane x where the empty space right of the last candle begins.
+    // left: labels sit at the pane's left edge, so the pill goes right of the label.
     // Tries beside the label on the line, then stacked above/below it; prefers spots in
     // the empty space so the pill doesn't sit on candles.
-    placePill(rect, y, label, obstacles, freeX) {
+    placePill(rect, y, label, obstacles, freeX, left) {
       if (!rect || y == null || !Number.isFinite(y)) return;
       const pw = this.pillWidth();
       const ph = this.pill.offsetHeight || PILL_H;
@@ -355,8 +386,9 @@
 
       const cands = [];
       if (label) {
-        const beside = Math.round(label.left - PILL_GAP - pw);
-        const stacked = Math.round(label.right - pw);
+        // Stacked: flush with the label's outer edge (the one at the pane's edge).
+        const beside = Math.round(left ? label.right + PILL_GAP : label.left - PILL_GAP - pw);
+        const stacked = Math.round(left ? label.left : label.right - pw);
         const row = ph / 2 + 13; // clears a 22px label plus a 2px gap
         cands.push(
           [beside, clamped], [stacked, clamped - row], [stacked, clamped + row],
@@ -365,7 +397,8 @@
       } else {
         cands.push([PILL_MIN_LEFT, clamped]);
       }
-      const fits = ([x, cy]) => x >= PILL_MIN_LEFT && cy - ph / 2 >= 0 && cy + ph / 2 <= rect.height
+      const fits = ([x, cy]) => x >= PILL_MIN_LEFT && x + pw <= rect.width
+        && cy - ph / 2 >= 0 && cy + ph / 2 <= rect.height
         && !(obstacles || []).some((o) => o
           && x < o.right && x + pw > o.left && cy - ph / 2 < o.bottom && cy + ph / 2 > o.top);
       const inFree = ([x]) => freeX == null || x >= freeX;

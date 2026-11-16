@@ -263,6 +263,8 @@
       }
       const c = settings.load();
       const redo = ['slAtr', 'rr', 'atrDays'].some((k) => patch[k] != null && patch[k] !== c[k]);
+      // Labels moved to the right: make room for them there, as on activation.
+      if (patch.labelSide === 'right' && c.labelSide !== 'right') S.needSpace = true;
       ctx.overlay.settings = settings.save(patch);
       // New defaults apply right away where the levels are still the defaults.
       if (redo && S.active && S.auto && !S.rebuildAt && S.entry != null) placeDefaults();
@@ -337,7 +339,8 @@
     raf = ctx.bridge.win.requestAnimationFrame(frame);
   }
 
-  // The ± pill goes right before the Entry label and avoids covering any line label.
+  // The ± pill goes beside the Entry label (on its inner side) and avoids covering any line
+  // label. Labels sit at the price scale or the left edge (settings.labelSide).
   // r: numbers from render(); SL/TP scrolled off the pane get repeated in the dock.
   function placeControls(r) {
     const br = ctx.bridge;
@@ -354,20 +357,24 @@
       ctx.overlay.setSummary(parts);
     }
     if (!rect || !lines) return ctx.overlay.placePill(rect, yE);
+    const left = settings.load().labelSide === 'left';
+    lines.place(rect.width, left);
     const boxes = [
       lines.bodyBox('entry', rect.width, yE),
       lines.bodyBox('stop', rect.width, yS),
       lines.bodyBox('target', rect.width, yT),
     ];
     if (S.needSpace) makeRoomForLabels(rect, boxes);
-    ctx.overlay.placePill(rect, yE, boxes[0], boxes, br.freeZoneX());
+    // On the left the labels are over history candles anyway: no empty zone to prefer.
+    ctx.overlay.placePill(rect, yE, boxes[0], boxes, left ? null : br.freeZoneX(), left);
   }
 
   // Once per placement: scroll the chart so the labels (at the price scale) sit in the
   // empty space right of the last candle instead of on top of it.
   function makeRoomForLabels(rect, boxes) {
     S.needSpace = false;
-    if (settings.load().autoSpace === false) return;
+    const c = settings.load();
+    if (c.autoSpace === false || c.labelSide === 'left') return;
     const span = (b) => (b ? rect.width - b.left : 0);
     // The qty pill sits beside the Entry label, so that row needs the pill's width too.
     const need = Math.max(span(boxes[1]), span(boxes[2]), span(boxes[0]) + 6 + ctx.overlay.pillWidth());

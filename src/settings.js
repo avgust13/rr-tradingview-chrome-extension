@@ -6,9 +6,12 @@
   // Default SL/TP on a ticker the user hasn't adjusted: SL = slAtr × ATR(atrDays) of daily
   // candles, TP = rr × that risk. levels: per-ticker SL/TP distances (% of entry) once dragged.
   // autoSpace: scroll the chart once on activation so the labels sit right of the last candle.
+  // labelSide: 'right' — line labels and the ±Qty pill at the price scale; 'left' — at the
+  // pane's left edge (autoSpace does nothing there).
   // step/qty: used where sizing is global (UTEX); per-ticker sites keep them in byTicker.
   const DEFAULTS = {
-    step: 10, slAtr: 1, rr: 3, atrDays: 5, side: 1, qty: 10, autoSpace: true, byTicker: {}, levels: {},
+    step: 10, slAtr: 1, rr: 3, atrDays: 5, side: 1, qty: 10, autoSpace: true, labelSide: 'right',
+    byTicker: {}, levels: {},
   };
 
   let cur = null;

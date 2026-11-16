@@ -11,9 +11,11 @@
     body: 'rgba(30,34,45,0.8)', // candles show through the labels
   };
   const FONT = 'bold 12px -apple-system, "Trebuchet MS", Roboto, Ubuntu, sans-serif';
-  // Label's right edge sits at (100 - LINE_LENGTH)% of pane width: 1 keeps the labels
-  // against the price scale, in the empty space right of the last candle.
+  // Label's right edge sits at (100 - line length)% of pane width. LINE_LENGTH = 1 keeps the
+  // labels against the price scale, in the empty space right of the last candle (default).
+  // On the left the length is worked out per label, so its left edge sits LEFT_PAD px in.
   const LINE_LENGTH = 1;
+  const LEFT_PAD = 8;
 
   // Label geometry measured on the v27 renderer: text box = text + 20px,
   // quantity box = text + 11px, cancel button = 20px, height ≈ 22px.
@@ -78,15 +80,36 @@
       }
     }
 
+    // Label width in px as TradingView draws it, from the text set last.
+    labelWidth(name) {
+      const c = this.cache[name] || {};
+      const m = (s) => (s ? this.measure.measureText(s).width : 0);
+      return m(c.text) + BODY_PAD
+        + (c.qty ? m(c.qty) + QTY_PAD : 0)
+        + (name === 'entry' ? CANCEL_W : 0);
+    }
+
+    // Labels against the price scale (left = false) or the pane's left edge. Called every
+    // frame after set(): on the left the length follows the label's width and the pane's.
+    place(paneWidth, left) {
+      for (const name of Object.keys(this.lines)) {
+        const c = this.cache[name] || (this.cache[name] = {});
+        let len = LINE_LENGTH;
+        if (left && paneWidth > 0) {
+          const pct = 100 * (1 - (LEFT_PAD + this.labelWidth(name)) / paneWidth);
+          len = Math.round(Math.min(100, Math.max(LINE_LENGTH, pct)) * 100) / 100;
+        }
+        if (c.len === len) continue;
+        try { this.lines[name].setLineLength(len); c.len = len; } catch (e) { this.broken = true; }
+      }
+    }
+
     // Where TradingView draws this line's label, in pane pixels.
     bodyBox(name, paneWidth, y) {
       const c = this.cache[name];
       if (!c || y == null) return null;
-      const m = (s) => (s ? this.measure.measureText(s).width : 0);
-      const width = m(c.text) + BODY_PAD
-        + (c.qty ? m(c.qty) + QTY_PAD : 0)
-        + (name === 'entry' ? CANCEL_W : 0);
-      const right = paneWidth * (1 - LINE_LENGTH / 100);
+      const width = this.labelWidth(name);
+      const right = paneWidth * (1 - (c.len != null ? c.len : LINE_LENGTH) / 100);
       return { left: right - width, right, top: y - BODY_HALF_H, bottom: y + BODY_HALF_H };
     }
 
