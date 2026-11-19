@@ -75,26 +75,52 @@
     }
   }
 
-  // A line was dragged: from now on this ticker opens with these distances, not the ATR ones.
-  function rememberDistances() {
+  // A line was moved by the user: from now on this ticker opens with exactly these levels
+  // and this side, not at the current price with the ATR ones.
+  function rememberLevels() {
     S.auto = false;
     S.waitAtr = null;
-    if (S.entry == null || S.stop == null || S.target == null || !S.ticker) return;
-    const { slPct, tpPct } = calc.pctFromLevels(S.entry, S.side, S.stop, S.target);
-    if (slPct > 0 && tpPct > 0) settings.saveDistances(S.ticker, slPct, tpPct);
+    saveLevels();
   }
 
-  // Entry at `entry` (tick-rounded). SL/TP: the distances dragged earlier on this ticker,
-  // else the ATR defaults.
-  function placeLevels(entry) {
-    S.entry = entry;
-    const d = settings.distances(S.ticker);
-    if (!d) return placeDefaults();
+  // Writes the levels as they stand. Not during a symbol switch: S still holds the old
+  // ticker's levels then, and they are already saved.
+  function saveLevels() {
+    if (!S.ticker || S.rebuildAt) return;
+    settings.savePosition(S.ticker, { entry: S.entry, stop: S.stop, target: S.target, side: S.side });
+  }
+
+  // Levels for S.ticker. Placed by the user there before: the same prices and side again,
+  // wherever the price is now. Otherwise entry at `price` (tick-rounded) with the ATR
+  // defaults. Returns true when the saved ones came back.
+  function placeLevels(price) {
+    const p = settings.position(S.ticker);
+    if (p) {
+      S.auto = false;
+      S.waitAtr = null;
+      S.side = p.side;
+      S.entry = round(p.entry);
+      S.stop = round(p.stop);
+      S.target = round(p.target);
+      return true;
+    }
+    // A restored ticker may have left its own side on: back to the one chosen last.
+    S.side = settings.load().side === -1 ? -1 : 1;
+    S.entry = price;
+    const d = settings.distances(S.ticker); // adjusted before 0.6: only the distances are known
+    if (!d) { placeDefaults(); return false; }
     S.auto = false;
     S.waitAtr = null;
-    const lv = calc.levelsFromPct(entry, S.side, d.slPct, d.tpPct, tick());
+    const lv = calc.levelsFromPct(price, S.side, d.slPct, d.tpPct, tick());
     S.stop = lv.stop;
     S.target = lv.target;
+    return false;
+  }
+
+  // Saved levels can be far from the current price, off the screen: say why nothing is at
+  // the price and how to get the lines back there.
+  function toastRestored() {
+    ctx.overlay.toast(`${S.ticker}: уровни восстановлены · ↺ — заново от цены`);
   }
 
   // SL = slAtr × daily ATR from the current entry, TP = rr × that risk. Until the daily
@@ -128,7 +154,7 @@
   // Warm the ATR cache for the chart's symbol so activation places the ATR levels at once.
   function prefetchAtr() {
     const tk = ctx && ctx.bridge.ticker();
-    if (tk && !settings.distances(tk)) atr.load(tk, ctx.bridge);
+    if (tk && !settings.position(tk) && !settings.distances(tk)) atr.load(tk, ctx.bridge);
   }
 
   // "SL 1×ATR(5) · TP 3R": the defaults, as the Reset tooltip and the toasts show them.
@@ -165,7 +191,7 @@
     if (price == null) { ctx.overlay.toast('Нет цены — график ещё грузится'); return; }
     loadSizing(price);
     prefetchAtr(); // refreshes a stale cache; the levels use what is loaded
-    placeLevels(round(price));
+    const restored = placeLevels(round(price));
     try {
       buildLines();
     } catch (e) {
@@ -174,6 +200,7 @@
       return;
     }
     S.active = true;
+    if (restored) toastRestored();
     startLoop();
   }
 
@@ -197,7 +224,7 @@
     if (name === 'entry') S.entry = p;
     else if (name === 'stop') S.stop = p;
     else if (name === 'target') S.target = p;
-    if (final) rememberDistances();
+    if (final) rememberLevels();
   }
 
   const overlayHandlers = {
@@ -215,6 +242,7 @@
       }
       S.side = -S.side;
       settings.save({ side: S.side });
+      if (!S.auto) saveLevels(); // this ticker's own levels: remembered mirrored, with the new side
     },
     // → Price: entry jumps to the current price, SL and TP stay where they are. Levels the
     // user placed are remembered as they now stand; ATR defaults stay defaults.
@@ -222,9 +250,9 @@
       const live = ctx.bridge.lastPrice();
       if (live == null || S.rebuildAt) return;
       S.entry = round(live);
-      if (!S.auto) rememberDistances();
+      if (!S.auto) saveLevels();
     },
-    // Reset button: forget this ticker's dragged levels, entry at the current price,
+    // Reset button: forget this ticker's saved levels, entry at the current price,
     // SL/TP from ATR again.
     onReset() {
       const live = ctx.bridge.lastPrice();
@@ -232,7 +260,7 @@
         ctx.overlay.toast('График переключается на другой тикер — подождите секунду');
         return;
       }
-      settings.clearDistances(S.ticker);
+      settings.clearLevels(S.ticker);
       S.entry = round(live);
       placeDefaults();
       ctx.overlay.toast(`${defaultsText()} от ${fmtPrice(S.entry)}`);
@@ -391,8 +419,9 @@
       return;
     }
     loadSizing(price);
-    placeLevels(round(price));
-    try { buildLines(); } catch (e) { S.rebuildAt = Date.now() + 500; }
+    const restored = placeLevels(round(price));
+    try { buildLines(); } catch (e) { S.rebuildAt = Date.now() + 500; return; }
+    if (restored) toastRestored();
   }
 
   function startLoop() {

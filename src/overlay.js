@@ -1,7 +1,7 @@
 // HTML controls on top of the chart pane, inside the chart iframe. Kept off the candles:
 //  - pill: narrow stack of [+10] / [qty] / [−10], glued to the Entry label (labels sit at the price
 //    scale, or at the pane's left edge when chosen in settings);
-//  - dock: bottom-left corner, icon buttons: R/R toggle, long/short, entry to price, reset SL/TP,
+//  - dock: bottom-left corner, icon buttons: R/R toggle, long/short, entry to price, reset levels,
 //    Qty → order form, settings, close;
 //  - tip: hover tooltip, the only place the buttons are explained.
 (function () {
@@ -138,7 +138,7 @@
       this.setTip(this.toggle, 'R/R — показать / убрать инструмент\nAlt+Shift+R или значок расширения в панели Chrome');
       this.setTip(this.btnPrice, 'Вход — на текущую цену\nSL и TP остаются на своих уровнях');
       // Read at hover time: shows this ticker's ATR.
-      this.setTip(this.btnReset, () => 'Сбросить SL/TP по ATR\nЗабыть перетащенные SL/TP этого тикера и поставить'
+      this.setTip(this.btnReset, () => 'Сбросить уровни по ATR\nЗабыть сохранённые Entry / SL / TP этого тикера и поставить'
         + ' их заново от текущей цены.\n' + h.resetInfo());
       this.setTip(this.btnForm, `Qty в форму ордера ${site.name}\nОрдер не отправляется: Buy / Sell жмёте сами`);
       this.setTip(this.sum, 'Линия за видимой шкалой\nP&L на её уровне');
@@ -213,7 +213,7 @@
       spaceRow.prepend(this.inSpace);
       pop.appendChild(spaceRow);
       pop.appendChild(el(doc, 'div', 'rr-hint', 'На новом тикере SL — на N × ATR от входа (средний диапазон дневных свечей за закрытые дни), TP — на R:R × риск.'
-        + ' Перетащенные SL/TP запоминаются для тикера, кнопка ↺ в доке возвращает их к ATR.'
+        + ' Передвинутые Entry / SL / TP и сторона запоминаются для тикера как есть, кнопка ↺ в доке возвращает их к ATR.'
         + (site.perTicker ? ' Qty и шаг запоминаются для каждой пары отдельно.' : '')));
       const ok = el(doc, 'button', '', 'OK');
       ok.addEventListener('click', () => this.commitSettings());

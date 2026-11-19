@@ -4,7 +4,8 @@
   const NS = (window.__utexRR = window.__utexRR || {});
   const KEY = 'utexRR.settings';
   // Default SL/TP on a ticker the user hasn't adjusted: SL = slAtr × ATR(atrDays) of daily
-  // candles, TP = rr × that risk. levels: per-ticker SL/TP distances (% of entry) once dragged.
+  // candles, TP = rr × that risk. levels: per ticker, the Entry / SL / TP prices and the side
+  // as the user left them (up to 0.5: only the SL/TP distances in % of entry).
   // autoSpace: scroll the chart once on activation so the labels sit right of the last candle.
   // labelSide: 'right' — line labels and the ±Qty pill at the price scale; 'left' — at the
   // pane's left edge (autoSpace does nothing there).
@@ -50,26 +51,43 @@
     return save({ byTicker });
   }
 
-  // SL/TP distances the user set on this ticker by dragging: { slPct, tpPct } (% of entry).
-  // null = never adjusted, use the ATR defaults. Per ticker on every site: ATRs differ.
+  const isPrice = (v) => Number.isFinite(v) && v > 0;
+
+  // Entry / SL / TP and side as the user left them on this ticker: { entry, stop, target,
+  // side }, prices as they were, wherever the market is now. null = never placed by hand
+  // here. Per ticker on every site.
+  function position(ticker) {
+    const p = ticker && load().levels && load().levels[ticker];
+    if (!p || !isPrice(p.entry) || !isPrice(p.stop) || !isPrice(p.target)) return null;
+    return { entry: p.entry, stop: p.stop, target: p.target, side: p.side === -1 ? -1 : 1 };
+  }
+
+  function savePosition(ticker, { entry, stop, target, side }) {
+    if (!ticker || !isPrice(entry) || !isPrice(stop) || !isPrice(target)) return load();
+    const levels = Object.assign({}, load().levels);
+    levels[ticker] = { entry, stop, target, side: side === -1 ? -1 : 1 };
+    return save({ levels });
+  }
+
+  // Tickers adjusted before 0.6 have only the SL/TP distances: { slPct, tpPct } (% of entry).
+  // They open at the current price with those until a line is moved again.
   function distances(ticker) {
     const d = ticker && load().levels && load().levels[ticker];
     return d && d.slPct > 0 && d.tpPct > 0 ? { slPct: d.slPct, tpPct: d.tpPct } : null;
   }
 
-  function saveDistances(ticker, slPct, tpPct) {
-    if (!ticker) return load();
-    const levels = Object.assign({}, load().levels);
-    levels[ticker] = { slPct: +slPct.toFixed(4), tpPct: +tpPct.toFixed(4) };
-    return save({ levels });
-  }
-
-  function clearDistances(ticker) {
+  function clearLevels(ticker) {
     const levels = Object.assign({}, load().levels);
     if (!(ticker in levels)) return load();
     delete levels[ticker];
     return save({ levels });
   }
 
-  NS.settings = { load, save, sizing, saveSizing, distances, saveDistances, clearDistances, DEFAULTS };
+  // Another tab of this site saved: drop the cache, or this tab's next save would write its
+  // old copy over that tab's levels.
+  window.addEventListener('storage', (e) => {
+    if (e.key === KEY || e.key === null) cur = null;
+  });
+
+  NS.settings = { load, save, sizing, saveSizing, position, savePosition, distances, clearLevels, DEFAULTS };
 })();
