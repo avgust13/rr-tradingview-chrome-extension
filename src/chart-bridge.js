@@ -1,13 +1,9 @@
 // Everything that touches TradingView internals lives here, so a site/TV update
 // is fixed in one place. Verified against Charting Library v27.000 on margin.utex.io,
-// v27.005 on trading.bitfinex.com and v28.5.0 on app.hyperliquid.xyz.
+// v27.005 on trading.bitfinex.com, v28.5.0 on app.hyperliquid.xyz and on www.tradingview.com.
 (function () {
   'use strict';
   const NS = (window.__utexRR = window.__utexRR || {});
-
-  function findIframe() {
-    return document.querySelector('iframe[id^="tradingview_"]');
-  }
 
   function getApi(iframe) {
     try {
@@ -17,16 +13,34 @@
     }
   }
 
+  // The chart, or null while there is none yet. Exchanges embed the Charting Library in an
+  // iframe tradingview_* with window.tradingViewApi inside; on tradingview.com the chart is
+  // the page itself and the API is window.TradingViewApi.
+  function find() {
+    const own = window.TradingViewApi;
+    if (own && typeof own.activeChart === 'function') {
+      try { return own.activeChart() ? new Bridge(null, own) : null; } catch (e) { return null; }
+    }
+    const iframe = document.querySelector('iframe[id^="tradingview_"]');
+    const api = getApi(iframe);
+    return api ? new Bridge(iframe, api) : null;
+  }
+
   class Bridge {
+    // iframe: the Charting Library iframe, or null when the chart is this page (tradingview.com).
     constructor(iframe, api) {
       this.iframe = iframe;
-      this.win = iframe.contentWindow;
+      this.win = iframe ? iframe.contentWindow : window;
       this.doc = this.win.document;
       this.api = api;
+      // tradingview.com layouts hold several charts: the tool sits on the one active now and
+      // moves to another (alive() turns false, boot makes a new Bridge) when that is made active.
+      this.pinned = iframe ? null : api.activeChart();
     }
 
     alive() {
       try {
+        if (!this.iframe) return window.TradingViewApi === this.api && this.api.activeChart() === this.pinned;
         return this.iframe.isConnected && this.iframe.contentWindow === this.win && !!this.win.tradingViewApi;
       } catch (e) {
         return false;
@@ -34,7 +48,7 @@
     }
 
     chart() {
-      return this.api.activeChart();
+      return this.pinned || this.api.activeChart();
     }
 
     // Internal model: the public API has no "last price" getter.
@@ -70,9 +84,11 @@
     }
 
     // Human ticker ("DOCN", "BTC/USD", "BTCUSD"); chart().symbol() is UTEX's internal id. null while loading.
+    // tradingview.com adds the exchange ("BINANCE:BTCUSDT"): one name trades on many of them.
     ticker() {
       const si = this.symbolInfo();
-      return (si && (si.name || si.ticker)) || null;
+      if (!si) return null;
+      return (NS.site.ticker ? NS.site.ticker(si) : si.name || si.ticker) || null;
     }
 
     // Quote currency ("USD", "USDt", "BTC"); null when the feed doesn't say (UTEX).
@@ -81,13 +97,24 @@
       return (si && si.currency_code) || null;
     }
 
-    // Base currency of a pair ("BTC" in "BTC/USD", "BTCUSD" on Hyperliquid); null for stocks.
-    base() {
-      return NS.site.base(this.ticker());
+    // Money per 1.0 of price per unit of Qty: 50 for an ES futures contract, 1 for stocks and
+    // coins. Only tradingview.com says (symbolInfo.pointvalue); the exchanges trade units.
+    pointValue() {
+      const si = this.iframe ? null : this.symbolInfo();
+      const pv = si && Number(si.pointvalue);
+      return pv > 0 ? pv : 1;
     }
 
-    // Main price pane (first row of the chart table).
+    // Main price pane (first row of the chart table). On tradingview.com the one of the
+    // pinned chart: a layout has a table per chart.
     paneEl() {
+      if (!this.iframe) {
+        try {
+          const row = this.pinned.chartWidget().paneWidgets()[0].getElement();
+          const el = row && row.querySelector('.chart-gui-wrapper');
+          if (el) return el;
+        } catch (e) { /* internal API moved: the first table below */ }
+      }
       return this.doc.querySelector('.chart-markup-table.pane .chart-gui-wrapper');
     }
 
@@ -170,6 +197,65 @@
       });
     }
 
+    // tradingview.com: last `count` daily bars of the chart's symbol from TradingView's server,
+    // through the page's own connection (ChartApi). A chart session of our own with one
+    // series, closed once the bars are in: the chart on screen is untouched.
+    serverDailyBars(count) {
+      const ca = this.api && this.api._chartApiInstance;
+      const si = this.symbolInfo();
+      const symbol = si && (si.pro_name || si.full_name);
+      if (!ca || typeof ca.createSession !== 'function' || !symbol) return Promise.reject(new Error('no chart api'));
+      const id = 'cs_rr' + Math.random().toString(36).slice(2, 12);
+      return new Promise((ok, fail) => {
+        const plots = {}; // bar index -> [time (s), open, high, low, close, volume]
+        let sent = false;
+        let done = false;
+        const end = (err) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          try { if (sent) ca.chartDeleteSession(id); } catch (e) { /* disconnected */ }
+          try { ca.removeSession(id); } catch (e) { /* gone */ }
+          if (err) return fail(err);
+          ok(Object.keys(plots).map(Number).sort((a, b) => a - b).map((i) => {
+            const [time, open, high, low, close] = plots[i];
+            return { time: time * 1000, open, high, low, close };
+          }));
+        };
+        const timer = setTimeout(() => end(new Error('timeout')), 10000);
+        const send = () => {
+          sent = true;
+          ca.chartCreateSession(id, false);
+          ca.resolveSymbol(id, 'sds_sym_1', '=' + JSON.stringify({ symbol, adjustment: 'splits' }), (m) => {
+            if (m.method === 'symbol_error') end(new Error('symbol_error'));
+          });
+          ca.createSeries(id, 'sds_1', 's1', 'sds_sym_1', '1D', count, null, (m) => {
+            if (m.method === 'data_update') {
+              // The first update has all the bars, later ones only the forming day.
+              for (const p of (m.params && m.params.plots) || []) {
+                if (p && Array.isArray(p.value) && p.value.length >= 5) plots[p.index] = p.value;
+              }
+            } else if (m.method === 'series_completed') end();
+            else if (m.method === 'series_error') end(new Error('series_error'));
+          });
+        };
+        try {
+          // "connected" comes right away when the socket is up, otherwise once it connects.
+          ca.createSession(id, {
+            onMessage: (m) => {
+              if (m.method === 'connected' && !sent) {
+                try { send(); } catch (e) { end(e); }
+              } else if (m.method === 'disconnected' || m.method === 'critical_error') {
+                end(new Error(m.method));
+              }
+            },
+          });
+        } catch (e) {
+          end(e);
+        }
+      });
+    }
+
     // Returns an unsubscribe function.
     subscribe(eventName, cb) {
       try {
@@ -185,5 +271,5 @@
     }
   }
 
-  NS.bridge = { findIframe, getApi, Bridge };
+  NS.bridge = { find, Bridge };
 })();

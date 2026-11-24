@@ -132,7 +132,9 @@
       this.sumKey = '';
       this.btnGear = iconButton(doc, 'rr-gear', 'gear');
       this.btnClose = iconButton(doc, 'rr-close', 'close');
-      this.ctrls.append(this.btnSide, this.btnPrice, this.btnReset, this.btnForm, this.sum, this.btnGear, this.btnClose);
+      // No order form to fill on tradingview.com.
+      this.ctrls.append(this.btnSide, this.btnPrice, this.btnReset, ...(site.qtyInput ? [this.btnForm] : []),
+        this.sum, this.btnGear, this.btnClose);
       dock.append(this.toggle, this.ctrls);
       isolate(dock);
       this.setTip(this.toggle, 'R/R — показать / убрать инструмент\nAlt+Shift+R или значок расширения в панели Chrome');
@@ -356,7 +358,7 @@
 
     placeDock(rect) {
       if (!rect) return;
-      this.dock.style.left = rect.left + DOCK_LEFT + 'px';
+      this.dock.style.left = rect.left + (NS.site.dockLeft || DOCK_LEFT) + 'px';
       this.dock.style.top = rect.bottom - DOCK_BOTTOM + 'px'; // CSS lifts it by its own height
       if (this.pop.classList.contains(VIS)) this.placePop();
     }

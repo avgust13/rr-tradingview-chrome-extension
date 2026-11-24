@@ -2,7 +2,7 @@
 
 <img src="icons/logo.svg" width="64" alt="logo">
 
-Chrome-расширение для графиков TradingView на биржах UTEX (margin.utex.io), Bitfinex (trading.bitfinex.com) и Hyperliquid (app.hyperliquid.xyz). Рисует на графике линии Entry / SL / TP, а у линии входа ставит кнопки −10 / +10 shares (на Bitfinex и Hyperliquid — ± шаг в монетах). Сколько будет минус на стопе и плюс на тейке, считается от **текущей** цены.
+Chrome-расширение для графиков TradingView: на самом TradingView (www.tradingview.com/chart) и на биржах UTEX (margin.utex.io), Bitfinex (trading.bitfinex.com) и Hyperliquid (app.hyperliquid.xyz). Рисует на графике линии Entry / SL / TP, а у линии входа ставит кнопки −10 / +10 shares (на Bitfinex и Hyperliquid — ± шаг в монетах, на TradingView — в монетах, акциях или контрактах). Сколько будет минус на стопе и плюс на тейке, считается от **текущей** цены.
 
 Родной инструмент Long/Short Position расширение не трогает: оно рисует свои линии рядом.
 
@@ -12,15 +12,15 @@ Chrome-расширение для графиков TradingView на биржа�
 2. Включите **Developer mode** (справа сверху).
 3. Нажмите **Load unpacked** и выберите эту папку (где лежит `manifest.json`).
 4. Закрепите значок: меню-пазл 🧩 в панели Chrome → 📌 у «R/R for TradingView».
-5. Откройте (или обновите) страницу, например https://margin.utex.io/stocks-usdt/exchange-pro/DOCN-USDT, https://trading.bitfinex.com/t/BTC:USD?type=exchange или https://app.hyperliquid.xyz/trade/BTC
+5. Откройте (или обновите) страницу, например https://www.tradingview.com/chart/, https://margin.utex.io/stocks-usdt/exchange-pro/DOCN-USDT, https://trading.bitfinex.com/t/BTC:USD?type=exchange или https://app.hyperliquid.xyz/trade/BTC
 
 Нужен Chrome 111+ (используется `world: "MAIN"` в content scripts).
 
-После правок в коде нажмите ⟳ у расширения в `chrome://extensions` и обновите вкладку биржи.
+После правок в коде нажмите ⟳ у расширения в `chrome://extensions` и обновите вкладку с графиком.
 
 ## Использование
 
-Включить или убрать инструмент можно тремя способами: кнопкой с логотипом внизу слева на графике, значком расширения в панели Chrome (на вкладке UTEX, Bitfinex или Hyperliquid; на любой другой он откроет UTEX) или клавишами **Alt+Shift+R**.
+Включить или убрать инструмент можно тремя способами: кнопкой с логотипом внизу слева на графике, значком расширения в панели Chrome (на вкладке графика TradingView, UTEX, Bitfinex или Hyperliquid; на других страницах tradingview.com он откроет график TradingView, на любой другой — UTEX) или клавишами **Alt+Shift+R**.
 
 Всё разнесено так, чтобы не закрывать свечи:
 
@@ -36,7 +36,7 @@ Chrome-расширение для графиков TradingView на биржа�
   - **стрелка ↗ (зелёная) / ↘ (красная)**: Long / Short. Нажатие переключает сторону, SL и TP зеркалятся относительно входа.
   - **прицел**: одно нажатие ставит вход на текущую цену. SL и TP остаются на своих уровнях.
   - **↺ Сбросить уровни**: забыть сохранённые Entry / SL / TP этого тикера и поставить всё заново от текущей цены по ATR. В подсказке кнопки видно сам ATR, например `ATR(5) 8.91 (10.36%)`.
-  - **⇥ Qty в форму**: вписывает Qty в форму ордера (на UTEX — в Buy для long, Sell для short; на Bitfinex — в общее поле Amount; на Hyperliquid — в общее поле Size). Ордер **не отправляется**, кнопку Buy/Sell нажимаете сами.
+  - **⇥ Qty в форму**: вписывает Qty в форму ордера (на UTEX — в Buy для long, Sell для short; на Bitfinex — в общее поле Amount; на Hyperliquid — в общее поле Size). Ордер **не отправляется**, кнопку Buy/Sell нажимаете сами. На tradingview.com этой кнопки нет.
   - Если SL или TP ушли за видимую шкалу, их −$ / +$ показываются прямо в доке текстом.
   - **шестерёнка**: шаг Qty, SL в ATR, TP в R:R, период ATR в днях, «Подписи линий» слева / справа, «Освобождать место справа».
   - **✕** (или крестик на линии Entry): убрать инструмент.
@@ -47,7 +47,7 @@ Chrome-расширение для графиков TradingView на биржа�
 На тикере, где вы ещё не двигали линии, вход ставится по текущей цене, **SL — на 1 × ATR(5)**, **TP — на 3 × риск** (R:R 3:1).
 
 - **ATR(5)** — средний true range за 5 последних **закрытых** дневных свечей: max(high − low, |high − пред. close|, |low − пред. close|), простое среднее. Сегодняшняя свеча не считается: за полдня диапазон ещё неполный.
-- Дневные свечи: на UTEX — из datafeed самого графика (отдельный запрос, график не трогается), на Bitfinex — из публичного API `api-pub.bitfinex.com`, на Hyperliquid — из `api.hyperliquid.xyz/info` (`candleSnapshot`). Свечи кешируются на час для каждого тикера и подгружаются заранее, ещё до включения инструмента.
+- Дневные свечи: на tradingview.com — с сервера TradingView через соединение самой страницы (своя короткая сессия на один запрос, график не трогается), на UTEX — из datafeed самого графика (отдельный запрос, график не трогается), на Bitfinex — из публичного API `api-pub.bitfinex.com`, на Hyperliquid — из `api.hyperliquid.xyz/info` (`candleSnapshot`). Свечи кешируются на час для каждого тикера и подгружаются заранее, ещё до включения инструмента.
 - Пока свечи грузятся (обычно доли секунды) или если их нет совсем, SL ставится на 2% от входа, а с приходом ATR линии переставляются сами.
 - Множитель ATR, R:R и период (1–30 дней) меняются в ⚙. Если на тикере стоят ATR-уровни, они сразу пересчитываются.
 
@@ -59,9 +59,19 @@ Chrome-расширение для графиков TradingView на биржа�
 - Если цена с тех пор ушла далеко, линии могут оказаться за экраном. При возврате появляется подсказка «уровни восстановлены», P&L ушедших за шкалу SL / TP виден в доке. **Прицел** возвращает вход к цене, **↺** ставит всё заново по ATR и забывает сохранённое.
 - Тикеры, где линии не трогали, каждый раз открываются по текущей цене с ATR-уровнями и стороной, выбранной последней.
 - Тикеры, настроенные в версиях до 0.6, помнят только дистанции SL/TP в % от входа: они открываются по текущей цене с этими дистанциями, пока вы снова не передвинете линию.
-- Qty сюда не входит: на UTEX он общий для всех тикеров, на Bitfinex и Hyperliquid — свой у каждой пары.
+- Qty сюда не входит: на UTEX он общий для всех тикеров, на Bitfinex, Hyperliquid и tradingview.com — свой у каждой пары.
 
-Настройки и уровни хранятся в `localStorage` страницы под ключом `utexRR.settings` (у каждой биржи свои, в каждом браузере свои).
+Настройки и уровни хранятся в `localStorage` страницы под ключом `utexRR.settings` (у каждого сайта свои, в каждом браузере свои).
+
+### tradingview.com: чем отличается
+
+- **Тикер — вместе с биржей**: `BINANCE:BTCUSDT` и `BYBIT:BTCUSDT` — два разных тикера, у каждого свои Entry / SL / TP, Qty и шаг.
+- **Qty**: монеты — дробные, как на Bitfinex (шаг ≈ $10, Qty = 10 шагов, Shift — 1/10 шага); акции, фьючерсы и форекс — целые. Если один шаг сам стоит больше $10 000 (контракт ES, акция BRK.A), на новом тикере Qty = 1.
+- **Фьючерсы**: Qty — в контрактах, P&L и сумма считаются с point value контракта (ES — $50 за пункт, NQ — $20). Point value берётся из TradingView.
+- **Деньги — в валюте котировки**: `$`, `€`, `£`, `¥`, остальная фиатная валюта — с кодом (`−68.10 CAD`), крипта — 8 знаков (`−0.00005590 BTC`).
+- **Qty в форму** нет: форма биржи там не открыта.
+- Док стоит правее надписи «TradingView» в углу графика.
+- В раскладке из нескольких графиков инструмент стоит на активном графике и переходит на другой, когда активным становится тот.
 
 ### Bitfinex и Hyperliquid: чем отличается
 
@@ -84,20 +94,22 @@ Chrome-расширение для графиков TradingView на биржа�
 | `src/calc.js` | Чистая математика: P&L на SL/TP, R:R, проценты, округление к тику и Qty, автошаг, форматирование (в т.ч. по валюте котировки) |
 | `src/hyperliquid.js` | Hyperliquid: тикер графика → монета (`BTCUSD` → `BTC`, `xyz:TSLAUSD` → `xyz:TSLA`, `HYPE/USDC-@107` → `@107`), точность Size и дневные свечи из API |
 | `src/atr.js` | Дневные свечи по тикерам (кеш на час) и ATR из них для SL по умолчанию |
-| `src/sites.js` | Отличия бирж: точность Qty, Qty на пару или общий, мелкий шаг, базовая валюта тикера, поле Qty в форме ордера, откуда брать дневные свечи |
-| `src/chart-bridge.js` | Доступ к TradingView: iframe `tradingview_*` → `tradingViewApi`, текущая цена, тик, цена → пиксель, пустая зона справа, дневные свечи из datafeed сайта (`window[<id iframe>].datafeed`) |
-| `src/lines.js` | Линии через `chart.createOrderLine()` и расчёт, где TradingView рисует их подписи |
-| `src/overlay.js`, `src/styles.js` | «Таблетка» ±Qty, док с SVG-иконками, настройки, всплывающие подсказки и тосты внутри iframe графика |
+| `src/sites.js` | Отличия сайтов: точность Qty, Qty на пару или общий, мелкий шаг, имя тикера, базовая валюта, поле Qty в форме ордера, откуда брать дневные свечи |
+| `src/chart-bridge.js` | Доступ к TradingView: на биржах iframe `tradingview_*` → `tradingViewApi`, на tradingview.com `window.TradingViewApi` самой страницы (активный график раскладки); текущая цена, тик, point value, цена → пиксель, пустая зона справа, дневные свечи из datafeed сайта (`window[<id iframe>].datafeed`) или с сервера TradingView (`serverDailyBars`) |
+| `src/lines.js` | Линии через `chart.createOrderLine()` (на tradingview.com он возвращает Promise) и расчёт, где TradingView рисует их подписи |
+| `src/overlay.js`, `src/styles.js` | «Таблетка» ±Qty, док с SVG-иконками, настройки, всплывающие подсказки и тосты в документе графика (iframe на биржах, сама страница на tradingview.com) |
 | `src/logo.js` | Логотип (прямоугольники на сетке 128×128): кнопка на графике и иконки |
 | `src/order-form.js` | Перенос Qty в форму ордера (React-safe): UTEX `#BUYqty` / `#SELLqty`, Bitfinex `#orderform-panel input[name=amount]`, Hyperliquid `[data-testid=sz-input] input` |
 | `src/settings.js` | Настройки в `localStorage`, Qty/шаг по парам (Bitfinex, Hyperliquid), Entry / SL / TP и сторона по тикерам, множители ATR |
-| `src/main.js` | Состояние, цикл обновления (`requestAnimationFrame`), смена тикера, пересоздание iframe |
+| `src/main.js` | Состояние, цикл обновления (`requestAnimationFrame`), смена тикера, пересоздание iframe или смена активного графика |
 | `src/background.js` | Клик по значку расширения в панели Chrome |
 | `icons/` | `logo.svg` и PNG 16/32/48/128, генерируются `node tools/make-icons.js` |
 
-Проверено на TradingView Charting Library **v27.000** (UTEX), **v27.005** (Bitfinex) и **v28.5.0** (Hyperliquid). Хрупкие места:
+Проверено на TradingView Charting Library **v27.000** (UTEX), **v27.005** (Bitfinex), **v28.5.0** (Hyperliquid) и на www.tradingview.com (ноябрь 2026). Хрупкие места:
 
 - `chartModel().mainSeries()` (текущая цена, цена → пиксель) — внутренний API TradingView. Всё такое собрано в `chart-bridge.js`.
+- tradingview.com: дневные свечи идут через внутренний `TradingViewApi._chartApiInstance` (`createSession` → `chartCreateSession` → `resolveSymbol` → `createSeries "1D"`, ответ в `data_update`), панель графика — через `chartWidget().paneWidgets()[0].getElement()`. Если TradingView это переименует, SL встанет на 2% от входа, а панель найдётся по `.chart-markup-table.pane`.
+- tradingview.com: док сдвинут на 176 px вправо — столько занимает надпись «TradingView», которую график рисует в левом нижнем углу.
 - Поля формы берутся из DOM бирж (см. `sites.js`): `#BUYqty` / `#SELLqty` на UTEX; на Bitfinex `#orderform-panel input[name="amount"]` и подпись «Amount BTC» над ним; на Hyperliquid `[data-testid="sz-input"] input` и единица (BTC / USDC) справа от него.
 - Datafeed графика берётся из `window[<id iframe>].datafeed` — так его оставляет виджет Charting Library. На Hyperliquid он для свечей не годится: его `getBars()` записывает запрошенный таймфрейм в общее поле `periodInSeconds`, и живые свечи графика сломались бы, поэтому там свечи берутся из API.
 - Имена тикеров Hyperliquid (`BTCUSD`, `xyz:TSLAUSD`, `HYPE/USDC-@107`) задаёт фронтенд биржи; разбор — в `src/hyperliquid.js`.
@@ -126,4 +138,4 @@ node test/levels.test.js
 node tools/make-icons.js
 ```
 
-В DevTools на странице биржи: `__utexRR.debug()` показывает состояние, `__utexRR.stop()` убирает всё, `__utexRR.toggle()` включает или выключает инструмент.
+В DevTools на странице с графиком: `__utexRR.debug()` показывает состояние, `__utexRR.stop()` убирает всё, `__utexRR.toggle()` включает или выключает инструмент.

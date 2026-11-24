@@ -51,9 +51,10 @@
   const clampStep = (s) => Math.max(calc.roundQty(s, QD), minQty());
 
   // Picks up the current ticker's size precision. Returns true when it changed.
-  // On Hyperliquid it comes from the API and may arrive after the tool is already on.
+  // On Hyperliquid it comes from the API and may arrive after the tool is already on;
+  // on tradingview.com it follows the kind of symbol (coins or shares).
   function syncDecimals() {
-    const d = site.sizeDecimals ? site.sizeDecimals(S.ticker) : null;
+    const d = site.sizeDecimals ? site.sizeDecimals(S.ticker, ctx.bridge.symbolInfo()) : null;
     const qd = d == null ? site.qtyDecimals : d;
     if (qd === QD) return false;
     QD = qd;
@@ -61,7 +62,8 @@
   }
 
   // Qty and step for the current ticker. On per-ticker sites a first-time pair gets a
-  // round step worth about $10 and Qty = 10 steps.
+  // round step worth about $10 and Qty = 10 steps; one step if that alone is worth over
+  // $10,000 (an ES contract, a BRK.A share on tradingview.com).
   function loadSizing(price) {
     S.ticker = ctx.bridge.ticker();
     syncDecimals();
@@ -70,8 +72,10 @@
       S.step = clampStep(sz.step);
       S.qty = clampQty(sz.qty);
     } else {
-      S.step = calc.autoStep(price, site.stepValue(ctx.bridge.quote()), QD);
-      S.qty = clampQty(10 * S.step);
+      const unit = price * ctx.bridge.pointValue(); // money per 1 of Qty
+      const small = site.stepValue(ctx.bridge.quote());
+      S.step = calc.autoStep(unit, small, QD);
+      S.qty = clampQty((S.step * unit > 1000 * small ? 1 : 10) * S.step);
     }
   }
 
@@ -178,6 +182,12 @@
     lines = new Lines(ctx.bridge.chart(), ctx.bridge.doc, {
       onMove: onLineMove,
       onClose: deactivate,
+      // tradingview.com makes the lines asynchronously: a failure shows up here, not in activate().
+      onFail(e) {
+        console.warn('[R/R] createOrderLine failed', e);
+        deactivate();
+        if (ctx) ctx.overlay.toast('Не удалось нарисовать линии на графике');
+      },
     });
     S.ticker = ctx.bridge.ticker();
     S.needSpace = true;
@@ -313,7 +323,8 @@
   function render(live) {
     const r = calc.compute({
       // Live price to the tick like the entry: some feeds carry extra decimals (UTEX 387.109).
-      side: S.side, qty: S.qty, entry: S.entry, stop: S.stop, target: S.target,
+      // Futures on tradingview.com: Qty in contracts, each worth pointValue per 1.0 of price.
+      side: S.side, qty: S.qty * ctx.bridge.pointValue(), entry: S.entry, stop: S.stop, target: S.target,
       last: live != null ? round(live) : null,
     });
     const sideTxt = S.side > 0 ? 'LONG' : 'SHORT';
@@ -456,17 +467,28 @@
     }));
     prefetchAtr();
 
-    bridge.win.addEventListener('keydown', onKey, true);
-    ctx.unsubs.push(() => { try { bridge.win.removeEventListener('keydown', onKey, true); } catch (e) { /* gone */ } });
+    // Keys pressed inside the chart iframe. On tradingview.com the chart is this page, where
+    // the document listener below already has them.
+    if (bridge.win !== window) {
+      bridge.win.addEventListener('keydown', onKey, true);
+      ctx.unsubs.push(() => { try { bridge.win.removeEventListener('keydown', onKey, true); } catch (e) { /* gone */ } });
+    }
 
     const placeDock = () => overlay.placeDock(bridge.paneRect());
     placeDock();
     bridge.win.addEventListener('resize', placeDock);
     ctx.unsubs.push(() => { try { bridge.win.removeEventListener('resize', placeDock); } catch (e) { /* gone */ } });
+    // tradingview.com: the watchlist and the bottom panels resize the chart, not the window.
+    if (typeof bridge.win.ResizeObserver === 'function') {
+      const ro = new bridge.win.ResizeObserver(placeDock);
+      ro.observe(bridge.paneEl());
+      ctx.unsubs.push(() => ro.disconnect());
+    }
 
     overlay.update(viewState());
     if (S.active) {
-      // Iframe was replaced while the tool was on: bring it back.
+      // Iframe was replaced while the tool was on, or (tradingview.com) another chart of the
+      // layout was made active: bring it back there.
       S.active = false;
       activate();
     }
@@ -492,11 +514,8 @@
       teardown();
       S.active = wasActive;
     }
-    const iframe = B.findIframe();
-    const api = B.getApi(iframe);
-    if (!api) return;
-    const bridge = new B.Bridge(iframe, api);
-    if (bridge.lastPrice() == null || !bridge.paneEl()) return; // chart not ready yet
+    const bridge = B.find();
+    if (!bridge || bridge.lastPrice() == null || !bridge.paneEl()) return; // chart not ready yet
     setup(bridge);
   }
 

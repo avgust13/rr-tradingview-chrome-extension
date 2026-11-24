@@ -100,6 +100,9 @@ t('fmtMoney by quote currency', () => {
   assert.equal(c.fmtMoney(-0.00031250, true, 'BTC'), '−0.00031250 BTC');
   assert.equal(c.fmtMoney(0, true, 'BTC'), '0.00000000 BTC');
   assert.equal(c.fmtMoney(5, true, null), '+$5.00');
+  // Stocks on tradingview.com in other fiat: cents and the code
+  assert.equal(c.fmtMoney(-1234.567, true, 'CAD'), '−1,234.57 CAD');
+  assert.equal(c.fmtMoney(0.001, true, 'INR'), '0.00 INR');
 });
 
 t('formatting', () => {

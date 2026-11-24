@@ -40,6 +40,8 @@ class Bridge {
   tick() { return 0.01; }
   ticker() { return chart.ticker; }
   quote() { return null; }
+  symbolInfo() { return null; }
+  pointValue() { return 1; }
   paneEl() { return {}; }
   paneRect() { return null; }
   priceToY() { return null; }
@@ -64,7 +66,7 @@ class Overlay {
 
 NS.calc = require('../src/calc.js');
 NS.site = { name: 'Test', qtyDecimals: 0, perTicker: false, fineStep: () => 1, stepValue: () => 10, base: () => null };
-NS.bridge = { findIframe: () => ({}), getApi: () => ({}), Bridge };
+NS.bridge = { find: () => new Bridge(), Bridge };
 NS.Lines = Lines;
 NS.Overlay = Overlay;
 NS.orderForm = {};

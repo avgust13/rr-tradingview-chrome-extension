@@ -24,8 +24,10 @@
   const CANCEL_W = 20;
   const BODY_HALF_H = 11;
 
-  function makeLine(chart, color, style) {
-    const l = chart.createOrderLine();
+  // name -> [color, line style]. Created in this order: Entry ends up on top.
+  const SPECS = { target: [COLORS.target, 2], stop: [COLORS.stop, 2], entry: [COLORS.entry, 0] };
+
+  function styleLine(l, color, style) {
     l.setExtendLeft(true)
       .setLineLength(LINE_LENGTH)
       .setLineStyle(style)
@@ -47,29 +49,51 @@
   }
 
   class Lines {
-    // handlers: { onMove(name, price, final), onClose() }
+    // handlers: { onMove(name, price, final), onClose(), onFail(error) }
     constructor(chart, doc, handlers) {
       this.broken = false;
-      this.cache = {};
+      this.gone = false;
+      this.cache = {};   // what TradingView shows, per line
+      this.want = {};    // what set() was asked last, per line: applied once the line exists
+      this.lines = {};
+      this.h = handlers;
       this.measure = doc.createElement('canvas').getContext('2d');
       this.measure.font = FONT;
-      this.lines = {
-        target: makeLine(chart, COLORS.target, 2),
-        stop: makeLine(chart, COLORS.stop, 2),
-        entry: makeLine(chart, COLORS.entry, 0),
-      };
-      for (const name of Object.keys(this.lines)) {
-        const l = this.lines[name];
-        l.onMoving(() => handlers.onMove(name, l.getPrice(), false));
-        l.onMove(() => handlers.onMove(name, l.getPrice(), true));
-        l.setCancellable(name === 'entry');
+      for (const name of Object.keys(SPECS)) {
+        const made = chart.createOrderLine();
+        // The Charting Library hands the line back; tradingview.com a Promise of it.
+        if (made && typeof made.then === 'function') {
+          made.then((l) => this.attach(name, l)).catch((e) => this.fail(e));
+        } else {
+          this.attach(name, made);
+        }
       }
-      this.lines.entry.onCancel(() => handlers.onClose());
+    }
+
+    attach(name, l) {
+      if (this.gone) { try { l.remove(); } catch (e) { /* gone with the chart */ } return; }
+      styleLine(l, ...SPECS[name]);
+      l.onMoving(() => this.h.onMove(name, l.getPrice(), false));
+      l.onMove(() => this.h.onMove(name, l.getPrice(), true));
+      l.setCancellable(name === 'entry');
+      if (name === 'entry') l.onCancel(() => this.h.onClose());
+      this.lines[name] = l;
+      if (this.want[name]) this.set(name, this.want[name]);
+    }
+
+    // A line could not be made: no point in retrying every frame.
+    fail(e) {
+      if (this.gone) return;
+      this.remove();
+      if (this.h.onFail) this.h.onFail(e);
     }
 
     // Only calls into TradingView when something actually changed.
-    set(name, { price, text, qty }) {
+    set(name, props) {
+      this.want[name] = props;
       const l = this.lines[name];
+      if (!l) return; // still being created (tradingview.com)
+      const { price, text, qty } = props;
       const c = this.cache[name] || (this.cache[name] = {});
       try {
         if (price != null && c.price !== price) { l.setPrice(price); c.price = price; }
@@ -114,6 +138,7 @@
     }
 
     remove() {
+      this.gone = true; // lines still on their way are removed as they arrive
       for (const l of Object.values(this.lines)) {
         try { l.remove(); } catch (e) { /* already gone */ }
       }

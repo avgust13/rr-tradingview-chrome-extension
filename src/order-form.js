@@ -30,7 +30,7 @@
   // Refuses when the form is on another market than the chart, e.g. after switching the
   // chart's symbol from inside TradingView, or when the form takes the size in dollars.
   function fillQty(side, qty, base) {
-    const el = NS.site.qtyInput(side);
+    const el = NS.site.qtyInput ? NS.site.qtyInput(side) : null;
     if (!el) return { ok: false, reason: 'missing' };
     const unit = NS.site.formUnit(el);
     if (unit && base && norm(unit) !== norm(base)) {

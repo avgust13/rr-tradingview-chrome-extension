@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "R/R for TradingView",
-  "version": "0.6.0",
-  "description": "Entry / SL / TP lines with ±Qty buttons and live risk/reward on the TradingView charts of UTEX, Bitfinex and Hyperliquid.",
+  "version": "0.7.0",
+  "description": "Entry / SL / TP lines with ±Qty buttons and live risk/reward on TradingView charts: tradingview.com, UTEX, Bitfinex and Hyperliquid.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
@@ -10,7 +10,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_title": "R/R — показать/убрать инструмент (UTEX, Bitfinex, Hyperliquid)",
+    "default_title": "R/R — показать/убрать инструмент (TradingView, UTEX, Bitfinex, Hyperliquid)",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -26,7 +26,8 @@
       "matches": [
         "https://margin.utex.io/*",
         "https://trading.bitfinex.com/*",
-        "https://app.hyperliquid.xyz/*"
+        "https://app.hyperliquid.xyz/*",
+        "https://*.tradingview.com/chart/*"
       ],
       "js": [
         "src/calc.js",

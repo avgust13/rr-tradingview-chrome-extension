@@ -134,15 +134,21 @@
     });
   }
 
-  // Quote currencies shown as a symbol with cents. Anything else (BTC, ETH…) is written
+  // Quote currencies shown as a symbol with cents. Other fiat (stocks on tradingview.com:
+  // CAD, INR…) gets cents and its code: "1,234.50 CAD". Anything else (BTC, ETH…) is written
   // out with 8 decimals: "0.00012345 BTC". No currency (UTEX) means dollars.
   const MONEY = { USD: '$', USDT: '$', UST: '$', USDC: '$', EUR: '€', GBP: '£', JPY: '¥' };
+  const FIAT = new Set(('AED ARS AUD BRL CAD CHF CLP CNY COP CZK DKK EGP HKD HUF IDR ILS INR KRW KZT '
+    + 'MXN MYR NGN NOK NZD PEN PHP PKR PLN QAR RON RUB SAR SEK SGD THB TRY TWD UAH VND ZAR GBX').split(' '));
 
   function fmtMoney(v, signed, currency) {
-    const sym = currency ? MONEY[String(currency).toUpperCase()] : '$';
-    const abs = sym ? sym + fmtNum(Math.abs(v), 2) : fmtNum(Math.abs(v), 8) + ' ' + currency;
+    const code = currency ? String(currency).toUpperCase() : null;
+    const sym = code ? MONEY[code] : '$';
+    const cents = sym || FIAT.has(code);
+    const num = fmtNum(Math.abs(v), cents ? 2 : 8);
+    const abs = sym ? sym + num : num + ' ' + currency;
     if (!signed) return (v < 0 ? '−' : '') + abs;
-    if (Math.abs(v) < (sym ? 0.005 : 5e-9)) return abs;
+    if (Math.abs(v) < (cents ? 0.005 : 5e-9)) return abs;
     return (v < 0 ? '−' : '+') + abs;
   }
 
